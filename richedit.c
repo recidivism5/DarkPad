@@ -39,6 +39,7 @@ typedef signed int i32;
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define COUNT(arr) (sizeof(arr)/sizeof(*arr))
 #define FOR(var,count) for(i32 var = 0; var < (count); var++)
+#define EXCLUDE_RECT(hdc, r) (ExcludeClipRect((hdc),(r).left,(r).top,(r).right,(r).bottom))
 void *memset(u8 *dst, int c, size_t size){
 	while (size--) *dst++ = c;
 	return dst;
@@ -110,26 +111,14 @@ HINSTANCE instance;
 HWND gwnd,gedit;
 HBRUSH background;
 HFONT font;
-WNDPROC RealEditProc;
-i32 __stdcall EditProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
-	switch (msg){
-		case WM_MOUSEWHEEL:{
-			UINT scrollLines;
-			SystemParametersInfoA(SPI_GETWHEELSCROLLLINES,0,&scrollLines,0);
-			SendMessageA(gedit,EM_LINESCROLL,0,-scrollLines*(GET_WHEEL_DELTA_WPARAM(wparam)/WHEEL_DELTA));
-			return 0;
-		}
-	}
-	return RealEditProc(wnd,msg,wparam,lparam);
-}
 i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
-		case WM_CREATE:
-			gedit = CreateWindowExA(0,"EDIT",0,WS_CHILD|WS_VISIBLE|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
-			RealEditProc = SetWindowLongPtrA(gedit,GWLP_WNDPROC,EditProc);
-			SendMessageA(gedit,WM_SETFONT,font,0);
-            SendMessageA(gedit,WM_SETTEXT,0,testString);
+		case WM_CREATE:{
+			gedit = CreateWindowEx(0,"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
+			SendMessage(gedit,WM_SETFONT,font,0);
+            SendMessage(gedit,WM_SETTEXT,0,testString);
 			break;
+		}
 		case WM_SETFOCUS:
             SetFocus(gedit);
             return 0;
@@ -139,14 +128,16 @@ i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			return 0;
-		case WM_CTLCOLOREDIT:
-			SetTextColor(wparam,RGB(255,255,255));
-			SetBkColor(wparam,RGB(20,20,20));
+		case WM_CTLCOLOREDIT:{
+			HDC hdc = wparam;
+			SetTextColor(hdc,RGB(255,255,255));
+			SetBkColor(hdc,RGB(20,20,20));
 			return background;
+		}
 	}
 	return DefWindowProcA(wnd,msg,wparam,lparam);
 }
-WNDCLASSA wc = {0,WindowProc,0,0,0,0,0,0,0,"DarkPad"};
+WNDCLASSA wc = {CS_HREDRAW|CS_VREDRAW,WindowProc,0,0,0,0,0,0,0,"DarkPad"};
 void __stdcall WinMainCRTStartup(){
 	instance = GetModuleHandleA(0);
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -161,8 +152,8 @@ void __stdcall WinMainCRTStartup(){
 	gwnd = CreateWindowExA(WS_EX_APPWINDOW,wc.lpszClassName,wc.lpszClassName,WS_OVERLAPPEDWINDOW|WS_VISIBLE,GetSystemMetrics(SM_CXSCREEN)/2-wndWidth/2,GetSystemMetrics(SM_CYSCREEN)/2-wndHeight/2,wndWidth,wndHeight,0,0,instance,0);
 	MSG msg;
 	while (GetMessageA(&msg,0,0,0)){
-		TranslateMessage(&msg);
-		DispatchMessageA(&msg);
+			TranslateMessage(&msg);
+			DispatchMessageA(&msg);
 	}
 	ExitProcess(msg.wParam);
 }
