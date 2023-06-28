@@ -132,23 +132,18 @@ void writeNum(i32 i){
 }
 i32 __stdcall EditProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
-		case WM_MOUSEWHEEL:{
+		case WM_MOUSEWHEEL:
 			UINT scrollLines;
 			SystemParametersInfoA(SPI_GETWHEELSCROLLLINES,0,&scrollLines,0);
 			SendMessageA(gedit,EM_LINESCROLL,0,-scrollLines*(GET_WHEEL_DELTA_WPARAM(wparam)/WHEEL_DELTA));
-			u8 s[64];
+		case WM_PAINT:
 			RECT r;
 			GetClientRect(gedit,&r);
 			i32 bottomLine = HIWORD(SendMessageA(gedit,EM_CHARFROMPOS,0,(r.bottom-1)<<16));
 			i32 topLine = SendMessageA(gedit,EM_GETFIRSTVISIBLELINE,0,0);
 			i32 totalLines = SendMessageA(gedit,EM_GETLINECOUNT,0,0);
-			writeNum(bottomLine);
-			writeNum(topLine);
-			writeNum(totalLines);
 			float thumbHeight = (float)r.bottom*((float)bottomLine-(float)topLine)/(float)totalLines;
 			float thumbPos = (float)r.bottom*(float)topLine/(float)totalLines;
-			writeNum(thumbHeight);
-			writeNum(thumbPos);
 			HDC hdc = GetDC(gwnd);
 			GetClientRect(gwnd,&r);
 			i32 bottom = r.bottom;
@@ -163,7 +158,6 @@ i32 __stdcall EditProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			FillRect(hdc,&r,background);
 			ReleaseDC(gwnd,hdc);
 			break;
-		}
 	}
 	return RealEditProc(wnd,msg,wparam,lparam);
 }
@@ -191,12 +185,6 @@ i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetTextColor(wparam,RGB(255,255,255));
 			SetBkColor(wparam,RGB(20,20,20));
 			return background;
-		case WM_PAINT:
-			PAINTSTRUCT ps;
-			HDC hdc = BeginPaint(wnd,&ps);
-			
-			EndPaint(wnd,&ps);
-			return 0;
 	}
 	return DefWindowProcA(wnd,msg,wparam,lparam);
 }
@@ -208,6 +196,7 @@ void __stdcall WinMainCRTStartup(){
 	background = CreateSolidBrush(RGB(20,20,20));
 	thumb = CreateSolidBrush(RGB(40,40,40));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
+	wc.hbrBackground = background;
 	RegisterClassA(&wc);
 	RECT wr = {0,0,800,600};
 	AdjustWindowRect(&wr,WS_OVERLAPPEDWINDOW,FALSE);
