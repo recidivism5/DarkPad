@@ -90,34 +90,79 @@ u8 *loadFile(u8 *path, u32 *size){
 	CloseHandle(f);
 	return b;
 }
+u8 *loadFileString(u8 *path, u32 *size){
+	HANDLE f = CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
+	*size = GetFileSize(f,0)+1;
+	u8 *b = HeapAlloc(heap,0,*size);
+	u32 bytesRead = 0;
+	ReadFile(f,b,*size,&bytesRead,0);
+	CloseHandle(f);
+	b[*size-1] = 0;
+	return b;
+}
+void intToAscii(i32 i, u8 *a){
+	u8 *p = a;
+	do {
+		*p++ = '0'+i%10;
+		i/=10;
+	} while (i);
+	*p = 0;
+	p--;
+	while (a < p){
+		u8 c = *a;
+		*a++ = *p;
+		*p-- = c;
+	}
+}
 i32 dpi;
 i32 dpiScale(i32 val){
     return (i32)((float)val * dpi / 96);
 }
-u8 testString[] = "Lorem ipsum dolor sit amet, consectetur "
-				  "adipisicing elit, sed do eiusmod tempor "
-				  "incididunt ut labore et dolore magna "
-				  "aliqua. Ut enim ad minim veniam, quis "
-				  "nostrud exercitation ullamco laboris nisi "
-				  "ut aliquip ex ea commodo consequat. Duis "
-				  "aute irure dolor in reprehenderit in "
-				  "voluptate velit esse cillum dolore eu "
-				  "fugiat nulla pariatur. Excepteur sint "
-				  "occaecat cupidatat non proident, sunt "
-				  "in culpa qui officia deserunt mollit "
-				  "anim id est laborum.";
 HINSTANCE instance;
 HWND gwnd,gedit;
-HBRUSH background;
+HANDLE consoleOut;
+HBRUSH background,thumb;
 HFONT font;
 WNDPROC RealEditProc;
+void writeNum(i32 i){
+	u8 a[64];
+	intToAscii(i,a);
+	WriteConsoleA(consoleOut,a,StringLength(a),0,0);
+	WriteConsoleA(consoleOut,"\r\n",2,0,0);
+}
 i32 __stdcall EditProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_MOUSEWHEEL:{
 			UINT scrollLines;
 			SystemParametersInfoA(SPI_GETWHEELSCROLLLINES,0,&scrollLines,0);
 			SendMessageA(gedit,EM_LINESCROLL,0,-scrollLines*(GET_WHEEL_DELTA_WPARAM(wparam)/WHEEL_DELTA));
-			return 0;
+			u8 s[64];
+			RECT r;
+			GetClientRect(gedit,&r);
+			i32 bottomLine = HIWORD(SendMessageA(gedit,EM_CHARFROMPOS,0,(r.bottom-1)<<16));
+			i32 topLine = SendMessageA(gedit,EM_GETFIRSTVISIBLELINE,0,0);
+			i32 totalLines = SendMessageA(gedit,EM_GETLINECOUNT,0,0);
+			writeNum(bottomLine);
+			writeNum(topLine);
+			writeNum(totalLines);
+			float thumbHeight = (float)r.bottom*((float)bottomLine-(float)topLine)/(float)totalLines;
+			float thumbPos = (float)r.bottom*(float)topLine/(float)totalLines;
+			writeNum(thumbHeight);
+			writeNum(thumbPos);
+			HDC hdc = GetDC(gwnd);
+			GetClientRect(gwnd,&r);
+			i32 bottom = r.bottom;
+			r.left = r.right-16;
+			r.bottom = thumbPos;
+			FillRect(hdc,&r,background);
+			r.top = r.bottom;
+			r.bottom += thumbHeight;
+			FillRect(hdc,&r,thumb);
+			r.top = r.bottom;
+			r.bottom = bottom;
+			FillRect(hdc,&r,background);
+			ReleaseDC(gwnd,hdc);
+			break;
 		}
 	}
 	return RealEditProc(wnd,msg,wparam,lparam);
@@ -128,13 +173,16 @@ i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			gedit = CreateWindowExA(0,"EDIT",0,WS_CHILD|WS_VISIBLE|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
 			RealEditProc = SetWindowLongPtrA(gedit,GWLP_WNDPROC,EditProc);
 			SendMessageA(gedit,WM_SETFONT,font,0);
-            SendMessageA(gedit,WM_SETTEXT,0,testString);
+			u32 size;
+			u8 *test = loadFileString("edit.c",&size);
+            SendMessageA(gedit,WM_SETTEXT,0,test);//WM_SETTEXT expects CRLF
+			free(test);
 			break;
 		case WM_SETFOCUS:
             SetFocus(gedit);
             return 0;
         case WM_SIZE:
-            MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam),1);
+            MoveWindow(gedit,0,0,LOWORD(lparam)-16,HIWORD(lparam),1);
             return 0;
 		case WM_DESTROY:
 			PostQuitMessage(0);
@@ -143,6 +191,12 @@ i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetTextColor(wparam,RGB(255,255,255));
 			SetBkColor(wparam,RGB(20,20,20));
 			return background;
+		case WM_PAINT:
+			PAINTSTRUCT ps;
+			HDC hdc = BeginPaint(wnd,&ps);
+			
+			EndPaint(wnd,&ps);
+			return 0;
 	}
 	return DefWindowProcA(wnd,msg,wparam,lparam);
 }
@@ -152,6 +206,7 @@ void __stdcall WinMainCRTStartup(){
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 	heap = GetProcessHeap();
 	background = CreateSolidBrush(RGB(20,20,20));
+	thumb = CreateSolidBrush(RGB(40,40,40));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
 	RegisterClassA(&wc);
 	RECT wr = {0,0,800,600};
@@ -159,6 +214,8 @@ void __stdcall WinMainCRTStartup(){
 	i32 wndWidth = wr.right-wr.left;
 	i32 wndHeight = wr.bottom-wr.top;
 	gwnd = CreateWindowExA(WS_EX_APPWINDOW,wc.lpszClassName,wc.lpszClassName,WS_OVERLAPPEDWINDOW|WS_VISIBLE,GetSystemMetrics(SM_CXSCREEN)/2-wndWidth/2,GetSystemMetrics(SM_CYSCREEN)/2-wndHeight/2,wndWidth,wndHeight,0,0,instance,0);
+	AllocConsole();
+	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
 	MSG msg;
 	while (GetMessageA(&msg,0,0,0)){
 		TranslateMessage(&msg);
