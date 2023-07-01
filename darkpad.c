@@ -47,9 +47,11 @@ int _fltused;
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
+typedef unsigned long long u64;
 typedef signed char i8;
 typedef signed short i16;
 typedef signed int i32;
+typedef signed long long i64;
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define COUNT(arr) (sizeof(arr)/sizeof(*arr))
@@ -67,6 +69,30 @@ i32 memcmp(u8 *s1, u8 *s2, i32 len){
 		if (s1[i]!=s2[i]) return 1;
 	}
 	return 0;
+}
+char toUpper(char c){
+	return c>='a' ? c-32 : c;
+}
+int StringsEqualInsensitive(char *a, char *b){
+	while (*a && *b && toUpper(*a)==toUpper(*b)){
+		a++;
+		b++;
+	}
+	return *a==*b;
+}
+i32 StringsEqual(u8 *a, u8 *b){
+	while (*a && *b && *a==*b){
+		a++;
+		b++;
+	}
+	return *a==*b;
+}
+i32 StringsEqualWide(u16 *a, u16 *b){
+	while (*a && *b && *a==*b){
+		a++;
+		b++;
+	}
+	return *a==*b;
 }
 void MoveMem(u8 *dst, u8 *src, size_t size){
 	if (dst > src){
@@ -136,11 +162,10 @@ i32 dpiScale(i32 val){
 HINSTANCE instance;
 HWND gwnd,gedit;
 HANDLE consoleOut;
-HBRUSH background,thumb;
+HBRUSH background;
 HFONT font;
-WNDPROC RealEditProc;
 void writeNum(i32 i){
-	u8 a[64];
+	u8 a[256];
 	intToAscii(i,a);
 	WriteConsoleA(consoleOut,a,StringLength(a),0,0);
 	WriteConsoleA(consoleOut,"\r\n",2,0,0);
@@ -174,10 +199,71 @@ i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	return DefWindowProcA(wnd,msg,wparam,lparam);
 }
 WNDCLASSA wc = {0,WindowProc,0,0,0,0,0,0,0,"DarkPad"};
+/*template <typename T>
+constexpr T DataDirectoryFromModuleBase(void *moduleBase, size_t entryID)
+{
+	auto dosHdr = reinterpret_cast<PIMAGE_DOS_HEADER>(moduleBase);
+	auto ntHdr = RVA2VA<PIMAGE_NT_HEADERS>(moduleBase, dosHdr->e_lfanew);
+	auto dataDir = ntHdr->OptionalHeader.DataDirectory;
+	return RVA2VA<T>(moduleBase, dataDir[entryID].VirtualAddress);
+}
+PIMAGE_THUNK_DATA FindDelayLoadThunkInModule(void *moduleBase, const char *dllName, uint16_t ordinal)
+{
+	auto imports = DataDirectoryFromModuleBase<PIMAGE_DELAYLOAD_DESCRIPTOR>(moduleBase, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT);
+	for (; imports->DllNameRVA; ++imports)
+	{
+		if (_stricmp(RVA2VA<LPCSTR>(moduleBase, imports->DllNameRVA), dllName) != 0)
+			continue;
+
+		auto impName = RVA2VA<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportNameTableRVA);
+		auto impAddr = RVA2VA<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportAddressTableRVA);
+		return FindAddressByOrdinal(moduleBase, impName, impAddr, ordinal);
+	}
+	return nullptr;
+}
+PIMAGE_THUNK_DATA FindAddressByOrdinal(void *moduleBase, PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr, uint16_t ordinal)
+{
+	for (; impName->u1.Ordinal; ++impName, ++impAddr)
+	{
+		if (IMAGE_SNAP_BY_ORDINAL(impName->u1.Ordinal) && IMAGE_ORDINAL(impName->u1.Ordinal) == ordinal)
+			return impAddr;
+	}
+	return nullptr;
+}
+*/
+HTHEME(__stdcall *OpenNcThemeData)(HWND wnd, LPCWSTR classList);
+HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
+	if (StringsEqualWide(classList,L"ScrollBar")){
+		wnd = 0;
+		classList = L"Explorer::ScrollBar";
+	}
+	return OpenNcThemeData(wnd,classList);
+}
 void __stdcall WinMainCRTStartup(){
 	instance = GetModuleHandleA(0);
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 	heap = GetProcessHeap();
+	AllocConsole();
+	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
+	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
+	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEA(49));
+	((i32 (__stdcall *)(i32))GetProcAddress(uxtheme,MAKEINTRESOURCEA(135)))(1);
+	((void (__stdcall *)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(104)))();
+	u64 comctl = LoadLibraryExW(L"comctl32.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
+	PIMAGE_DELAYLOAD_DESCRIPTOR imports = comctl+((PIMAGE_NT_HEADERS)(comctl+((PIMAGE_DOS_HEADER)comctl)->e_lfanew))->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress;
+	while (!StringsEqualInsensitive(comctl+imports->DllNameRVA,"uxtheme.dll")) imports++;
+	PIMAGE_THUNK_DATA impName = comctl+imports->ImportNameTableRVA;
+	PIMAGE_THUNK_DATA impAddr = comctl+imports->ImportAddressTableRVA;
+	while (!(IMAGE_SNAP_BY_ORDINAL(impName->u1.Ordinal) && IMAGE_ORDINAL(impName->u1.Ordinal)==49)){
+		impName++;
+		impAddr++;
+	}
+	DWORD oldProtect;
+	VirtualProtect(impAddr,sizeof(IMAGE_THUNK_DATA),PAGE_READWRITE,&oldProtect);
+	impAddr->u1.Function = customOpenThemeData;
+	VirtualProtect(impAddr,sizeof(IMAGE_THUNK_DATA),oldProtect,&oldProtect);
+
 	background = CreateSolidBrush(RGB(20,20,20));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
 	wc.hbrBackground = background;
@@ -187,8 +273,6 @@ void __stdcall WinMainCRTStartup(){
 	i32 wndWidth = wr.right-wr.left;
 	i32 wndHeight = wr.bottom-wr.top;
 	gwnd = CreateWindowExA(WS_EX_APPWINDOW,wc.lpszClassName,wc.lpszClassName,WS_OVERLAPPEDWINDOW|WS_VISIBLE,GetSystemMetrics(SM_CXSCREEN)/2-wndWidth/2,GetSystemMetrics(SM_CYSCREEN)/2-wndHeight/2,wndWidth,wndHeight,0,0,instance,0);
-	AllocConsole();
-	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
 	MSG msg;
 	while (GetMessageA(&msg,0,0,0)){
 		TranslateMessage(&msg);
