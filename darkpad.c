@@ -1,35 +1,4 @@
 /*
-	No more OOP.
-	We want full dpi compliance. I guess. Fuck.
-	No variable width fonts.
-	Every operation is a string, applied to a set of positions.
-	First we're gonna try expanded tabs.
-	Should we be using ExcludeRect for the menus or child windows?
-	ComCtl Edit Control.
-	If notepad.exe uses Edit Control, how the fuck does it handle files larger than 65535 lines?
-	I just thought of some shit:
-		We know the font used in the editor, so we can get the lineheight. We also can get firstvisible line.
-		So just firgure out the scroll bar from those.
-	Okay now this shit is getting crazy.
-	
-	Darkpad Mini:
-	Just one theme, dark with no titlebar image.
-	On Win11 we can use DwmSetWindowAttribute to set the titlebar color: https://stackoverflow.com/questions/39261826/change-the-color-of-the-title-bar-caption-of-a-win32-application
-	On Win10 we can draw the titlebar ourselves using Direct2D, maybe look into the way Visual Studio Code emulates the button hover effect.
-	The editor will be an edit control whose scrollbar we have turned dark using https://github.com/notepad-plus-plus/notepad-plus-plus/tree/master/PowerEditor/src/DarkMode
-
-	New plan:
-
-
-	Responsiveness:
-	-WS_EX_COMPOSITED makes the window more responsive, but only if you don't resize it.
-	-WS_EX_LAYERED plus SetLayeredWindowAttributes(gwnd,1,255,LWA_COLORKEY) makes window more responsive.
-		Interestingly, LWA_ALPHA does not give responsiveness.
-		The alpha value is ignored but might as well give 255 for good luck.
-		The color key must be something other than 0, otherwise the border hit detection will be all fucked up, I guess 'cause there's black pixels on it.
-		Whatever color key you choose, that's a banned color for your whole app.
-	-Both still require using BufferedPaint to eliminate flickering.
-
 	BUG TRACKER:
 	-crashes wcap when fullscreened
 */
@@ -199,38 +168,6 @@ i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	return DefWindowProcA(wnd,msg,wparam,lparam);
 }
 WNDCLASSA wc = {0,WindowProc,0,0,0,0,0,0,0,"DarkPad"};
-/*template <typename T>
-constexpr T DataDirectoryFromModuleBase(void *moduleBase, size_t entryID)
-{
-	auto dosHdr = reinterpret_cast<PIMAGE_DOS_HEADER>(moduleBase);
-	auto ntHdr = RVA2VA<PIMAGE_NT_HEADERS>(moduleBase, dosHdr->e_lfanew);
-	auto dataDir = ntHdr->OptionalHeader.DataDirectory;
-	return RVA2VA<T>(moduleBase, dataDir[entryID].VirtualAddress);
-}
-PIMAGE_THUNK_DATA FindDelayLoadThunkInModule(void *moduleBase, const char *dllName, uint16_t ordinal)
-{
-	auto imports = DataDirectoryFromModuleBase<PIMAGE_DELAYLOAD_DESCRIPTOR>(moduleBase, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT);
-	for (; imports->DllNameRVA; ++imports)
-	{
-		if (_stricmp(RVA2VA<LPCSTR>(moduleBase, imports->DllNameRVA), dllName) != 0)
-			continue;
-
-		auto impName = RVA2VA<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportNameTableRVA);
-		auto impAddr = RVA2VA<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportAddressTableRVA);
-		return FindAddressByOrdinal(moduleBase, impName, impAddr, ordinal);
-	}
-	return nullptr;
-}
-PIMAGE_THUNK_DATA FindAddressByOrdinal(void *moduleBase, PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr, uint16_t ordinal)
-{
-	for (; impName->u1.Ordinal; ++impName, ++impAddr)
-	{
-		if (IMAGE_SNAP_BY_ORDINAL(impName->u1.Ordinal) && IMAGE_ORDINAL(impName->u1.Ordinal) == ordinal)
-			return impAddr;
-	}
-	return nullptr;
-}
-*/
 HTHEME(__stdcall *OpenNcThemeData)(HWND wnd, LPCWSTR classList);
 HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	if (StringsEqualWide(classList,L"ScrollBar")){
@@ -242,8 +179,6 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 void __stdcall WinMainCRTStartup(){
 	instance = GetModuleHandleA(0);
 	heap = GetProcessHeap();
-	AllocConsole();
-	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -266,7 +201,8 @@ void __stdcall WinMainCRTStartup(){
 
 	background = CreateSolidBrush(RGB(20,20,20));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
-	wc.hbrBackground = background;
+	//wc.hbrBackground = background;
+	wc.lpszMenuName = MAKEINTRESOURCEA(RID_MENU);
 	RegisterClassA(&wc);
 	RECT wr = {0,0,800,600};
 	AdjustWindowRect(&wr,WS_OVERLAPPEDWINDOW,FALSE);
