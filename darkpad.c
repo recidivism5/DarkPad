@@ -139,9 +139,41 @@ void writeNum(i32 i){
 	WriteConsoleA(consoleOut,a,StringLength(a),0,0);
 	WriteConsoleA(consoleOut,"\r\n",2,0,0);
 }
-i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
+MENUINFO menuinfo = {sizeof(MENUINFO),MIM_BACKGROUND};
+i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
+		case WM_MEASUREITEM:
+			MEASUREITEMSTRUCT *mip = lparam;
+			mip->itemWidth = 30;
+			mip->itemHeight = 0;
+			return 1;
+		case WM_DRAWITEM:
+			DRAWITEMSTRUCT *dip = lparam;
+			HPEN oldPen = SelectObject(dip->hDC,GetStockObject(DC_PEN));
+			HBRUSH oldBrush = SelectObject(dip->hDC,GetStockObject(DC_BRUSH));
+			SetBkMode(dip->hDC,TRANSPARENT);
+			SetTextColor(dip->hDC,RGB(255,255,255));
+			if (dip->itemState & ODS_HOTLIGHT){
+				SetDCPenColor(dip->hDC,RGB(70,70,70));
+				SetDCBrushColor(dip->hDC,RGB(70,70,70));
+			} else {
+				SetDCPenColor(dip->hDC,RGB(20,20,20));
+				SetDCBrushColor(dip->hDC,RGB(20,20,20));
+			}
+			Rectangle(dip->hDC,dip->rcItem.left,dip->rcItem.top,dip->rcItem.right,dip->rcItem.bottom);
+			DrawTextA(dip->hDC,dip->itemData,-1,&dip->rcItem,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
+			SelectObject(dip->hDC,oldPen);
+			SelectObject(dip->hDC,oldBrush); 
+			return 1;
 		case WM_CREATE:
+			HMENU Bar = CreateMenu();
+			HMENU File = CreateMenu();
+			HMENU Edit = CreateMenu();
+			AppendMenuA(Bar,MF_OWNERDRAW,File,"File");
+			AppendMenuA(Bar,MF_OWNERDRAW,Edit,"Edit");
+			menuinfo.hbrBack = background;
+			SetMenuInfo(Bar,&menuinfo);
+			SetMenu(wnd,Bar);
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
 			gedit = CreateWindowExA(0,"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
@@ -168,7 +200,7 @@ i32 __stdcall WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	return DefWindowProcA(wnd,msg,wparam,lparam);
 }
 WNDCLASSA wc = {0,WindowProc,0,0,0,0,0,0,0,"DarkPad"};
-HTHEME(__stdcall *OpenNcThemeData)(HWND wnd, LPCWSTR classList);
+HTHEME(*OpenNcThemeData)(HWND wnd, LPCWSTR classList);
 HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	if (StringsEqualWide(classList,L"ScrollBar")){
 		wnd = 0;
@@ -176,15 +208,15 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	}
 	return OpenNcThemeData(wnd,classList);
 }
-void __stdcall WinMainCRTStartup(){
+void WinMainCRTStartup(){
 	instance = GetModuleHandleA(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEA(49));
-	((i32 (__stdcall *)(i32))GetProcAddress(uxtheme,MAKEINTRESOURCEA(135)))(1);
-	((void (__stdcall *)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(104)))();
+	((i32 (*)(i32))GetProcAddress(uxtheme,MAKEINTRESOURCEA(135)))(1);
+	((void (*)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(104)))();
 	u64 comctl = LoadLibraryExW(L"comctl32.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	PIMAGE_DELAYLOAD_DESCRIPTOR imports = comctl+((PIMAGE_NT_HEADERS)(comctl+((PIMAGE_DOS_HEADER)comctl)->e_lfanew))->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress;
 	while (!StringsEqualInsensitive(comctl+imports->DllNameRVA,"uxtheme.dll")) imports++;
@@ -201,8 +233,6 @@ void __stdcall WinMainCRTStartup(){
 
 	background = CreateSolidBrush(RGB(20,20,20));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
-	//wc.hbrBackground = background;
-	wc.lpszMenuName = MAKEINTRESOURCEA(RID_MENU);
 	RegisterClassA(&wc);
 	RECT wr = {0,0,800,600};
 	AdjustWindowRect(&wr,WS_OVERLAPPEDWINDOW,FALSE);

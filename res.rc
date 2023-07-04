@@ -1,9 +1,1 @@
 #include "res.h"
-RID_MENU MENU
-BEGIN
-    POPUP "&File"
-    BEGIN
-        MENUITEM "&New",RID_FILE_NEW
-        MENUITEM "&Open...",RID_FILE_OPEN
-    END
-END
