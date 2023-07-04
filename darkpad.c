@@ -161,8 +161,11 @@ RECT GetNonclientMenuBorderRect(HWND hwnd){
 }
 i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
-		case WM_NCPAINT:{
+		case WM_NCPAINT:
 			LRESULT result = DefWindowProcA(wnd,WM_NCPAINT,wparam,lparam);
+		case WM_SETFOCUS: case WM_KILLFOCUS:
+			MENUBARINFO mbi = {sizeof(mbi)};
+			if (!GetMenuBarInfo(wnd,OBJID_MENU,0,&mbi)) return;
 			HDC hdc = GetWindowDC(wnd);
 			RECT r = GetNonclientMenuBorderRect(wnd);
 			HBRUSH red = CreateSolidBrush(RGB(255,0,0));
@@ -170,7 +173,6 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			DeleteObject(red);
 			ReleaseDC(wnd,hdc);
 			return result;
-		}
 		case WM_MEASUREITEM:
 			MEASUREITEMSTRUCT *mip = lparam;
 			mip->itemWidth = 30;
@@ -212,9 +214,6 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
             SendMessageA(gedit,WM_SETTEXT,0,test);//WM_SETTEXT expects CRLF
 			free(test);
 			break;
-		case WM_SETFOCUS:
-            SetFocus(gedit);
-            return 0;
         case WM_SIZE:
             MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam),1);
             return 0;
