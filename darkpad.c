@@ -140,8 +140,37 @@ void writeNum(i32 i){
 	WriteConsoleA(consoleOut,"\r\n",2,0,0);
 }
 MENUINFO menuinfo = {sizeof(MENUINFO),MIM_BACKGROUND};
+RECT MapRectFromClientToWndCoords(HWND hwnd, RECT r){
+    MapWindowPoints(hwnd,0,&r,2);
+    RECT s;
+    GetWindowRect(hwnd,&s);
+    OffsetRect(&r,-s.left,-s.top);
+    return r;
+}
+RECT GetNonclientMenuBorderRect(HWND hwnd){
+    RECT r;
+    GetClientRect(hwnd,&r);
+    r = MapRectFromClientToWndCoords(hwnd,r);
+    int y = r.top - 1;
+    return (RECT){
+        r.left,
+        y,
+        r.right,
+        y+1
+    };
+}
 i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
+		case WM_NCPAINT:{
+			LRESULT result = DefWindowProcA(wnd,WM_NCPAINT,wparam,lparam);
+			HDC hdc = GetWindowDC(wnd);
+			RECT r = GetNonclientMenuBorderRect(wnd);
+			HBRUSH red = CreateSolidBrush(RGB(255,0,0));
+			FillRect(hdc,&r,red);
+			DeleteObject(red);
+			ReleaseDC(wnd,hdc);
+			return result;
+		}
 		case WM_MEASUREITEM:
 			MEASUREITEMSTRUCT *mip = lparam;
 			mip->itemWidth = 30;
