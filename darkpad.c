@@ -91,25 +91,6 @@ HANDLE heap;
 #define abs(x) ((x)<0 ? -(x) : (x))
 #define malloc(size) HeapAlloc(heap,0,(size))
 #define realloc(ptr,size) HeapReAlloc(heap,0,(ptr),(size))
-u8 *loadFile(u8 *path, u32 *size){
-	HANDLE f = CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
-	*size = GetFileSize(f,0);
-	u8 *b = HeapAlloc(heap,0,*size);
-	u32 bytesRead = 0;
-	ReadFile(f,b,*size,&bytesRead,0);
-	CloseHandle(f);
-	return b;
-}
-u8 *loadFileString(u8 *path, u32 *size){
-	HANDLE f = CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
-	*size = GetFileSize(f,0)+1;
-	u8 *b = HeapAlloc(heap,0,*size);
-	u32 bytesRead = 0;
-	ReadFile(f,b,*size,&bytesRead,0);
-	CloseHandle(f);
-	b[*size-1] = 0;
-	return b;
-}
 void intToAscii(i32 i, u8 *a){
 	u8 *p = a;
 	do {
@@ -131,8 +112,9 @@ i32 dpiScale(i32 val){
 HINSTANCE instance;
 HWND gwnd,gedit;
 HANDLE consoleOut;
-HBRUSH background;
+HBRUSH bBackground,bMenuBackground,bOutline;
 HFONT font,menufont;
+u8 gpath[MAX_PATH+4];
 void writeNum(i32 i){
 	u8 a[256];
 	intToAscii(i,a);
@@ -175,6 +157,47 @@ enum{
 	AID_ZOOM_IN,
 	AID_ZOOM_OUT,
 };
+void updateTitle(i32 modified){
+	u8 title[MAX_PATH+256];
+	CopyString(CopyString(title,modified ? "DarkPad - *" : "DarkPad - "),gpath);
+	SetWindowTextA(gwnd,title);
+}
+void loadFile(u16 *path){
+	i32 i = 0;
+	for (; i < MAX_PATH; i++){
+		gpath[i] = path[i];
+		if (!path[i]) break;
+	}
+	gpath[i] = 0;
+	WriteConsoleA(consoleOut,gpath,StringLength(gpath),0,0);
+	return;
+	HANDLE hfile = CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+	u32 size = GetFileSize(hfile,NULL);
+	u8 *file = HeapAlloc(heap,0,size);
+	u32 bytesRead = 0;
+	ReadFile(hfile,file,size,&bytesRead,NULL);
+	CloseHandle(hfile);
+	u32 total = 4, used = 0;
+	u8 *str = HeapAlloc(heap,0,total);
+	for (u8 *f = file; f < file+size; f++){
+		if (used+2 > total){
+			while (used+2 > total) total *= 2;
+			str = HeapReAlloc(heap,0,str,total);
+		}
+		if (*f=='\r' || *f=='\n'){
+			str[used++] = '\r';
+			str[used++] = '\n';
+		} else str[used++] = *f;
+	}
+	if (used==total){
+		total++;
+		str = HeapReAlloc(heap,0,str,total);
+	}
+	str[used++] = 0;
+	SendMessageA(gedit,WM_SETTEXT,0,str);
+	HeapFree(heap,0,file);
+	HeapFree(heap,0,str);
+}
 i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_NCPAINT:
@@ -184,9 +207,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			if (!GetMenuBarInfo(wnd,OBJID_MENU,0,&mbi)) return;
 			HDC hdc = GetWindowDC(wnd);
 			RECT r = GetNonclientMenuBorderRect(wnd);
-			HBRUSH brush = CreateSolidBrush(RGB(40,40,40));
-			FillRect(hdc,&r,brush);
-			DeleteObject(brush);
+			FillRect(hdc,&r,bMenuBackground);
 			ReleaseDC(wnd,hdc);
 			return result;
 		}
@@ -201,7 +222,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			mip->itemHeight = 0;
 			return 1;
 		}
-		case WM_DRAWITEM:
+		case WM_DRAWITEM:{
 			DRAWITEMSTRUCT *dip = lparam;
 			HPEN oldPen = SelectObject(dip->hDC,GetStockObject(DC_PEN));
 			HBRUSH oldBrush = SelectObject(dip->hDC,GetStockObject(DC_BRUSH));
@@ -219,7 +240,10 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SelectObject(dip->hDC,oldPen);
 			SelectObject(dip->hDC,oldBrush); 
 			return 1;
-		case WM_CREATE:
+		}
+		case WM_CREATE:{
+			gwnd = wnd;
+			updateTitle(0);
 			HMENU Bar = CreateMenu();
 			HMENU File = CreateMenu();
 			HMENU Edit = CreateMenu();
@@ -239,31 +263,46 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,File,"File");
 			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Edit,"Edit");
 			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Format,"Format");
-			menuinfo.hbrBack = CreateSolidBrush(RGB(40,40,40));
+			menuinfo.hbrBack = bMenuBackground;
 			SetMenuInfo(Bar,&menuinfo);
 			SetMenu(wnd,Bar);
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
 			gedit = CreateWindowExA(0,"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
 			SendMessageA(gedit,WM_SETFONT,font,0);
-			u32 size;
-			u8 *test = loadFileString("darkpad.c",&size);
-            SendMessageA(gedit,WM_SETTEXT,0,test);//WM_SETTEXT expects CRLF
-			free(test);
 			break;
-        case WM_SIZE:
-            MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam),1);
+		}
+        case WM_SIZE:{
+            MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam)-22,1);
+			RECT r = {0,HIWORD(lparam)-22,LOWORD(lparam),HIWORD(lparam)};
+			InvalidateRect(wnd,&r,0);
             return 0;
+		}
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			return 0;
 		case WM_CTLCOLOREDIT:
 			SetTextColor(wparam,0xcccccc);
 			SetBkColor(wparam,RGB(20,20,20));
-			return background;
+			return bBackground;
+		case WM_PAINT:{
+			PAINTSTRUCT ps;
+			HDC hdc = BeginPaint(wnd,&ps);
+			SelectObject(hdc,menufont);
+			SetBkMode(hdc,TRANSPARENT);
+			SetTextColor(hdc,RGB(255,255,255));
+			RECT r;
+			GetClientRect(wnd,&r);
+			r.top = r.bottom-22;
+			FillRect(hdc,&r,bMenuBackground);
+			EndPaint(wnd,&ps);
+			return 0;
+		}
 		case WM_COMMAND:
-			switch(LOWORD(wparam)){ 
-                case AID_OPEN:
+			if (HIWORD(wparam)==EN_CHANGE){
+				updateTitle(1);
+			} else switch(LOWORD(wparam)){ 
+                case AID_OPEN:{
 					IFileDialog *pfd;
 					IShellItem *psi;
 					PWSTR path = 0;
@@ -271,18 +310,27 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 						pfd->lpVtbl->Show(pfd,wnd);
 						if (SUCCEEDED(pfd->lpVtbl->GetResult(pfd,&psi))){
 							if (SUCCEEDED(psi->lpVtbl->GetDisplayName(psi,SIGDN_FILESYSPATH,&path))){
-								/*WCHAR *p = path;
-								FOR(i,MAX_PATH){
-									if (!path[i]) break;
-									gpath[i] = path[i];
-								}
-								loadFile(gpath);*/
+								loadFile(path);
+								updateTitle(0);
 								CoTaskMemFree(path);
 							}
 							psi->lpVtbl->Release(psi);
 						}
 						pfd->lpVtbl->Release(pfd);
 					}
+					break;
+				}
+				case AID_SAVE:{
+					if (!*gpath || SendMessageA(gedit,EM_GETMODIFY,0,0)){
+						if (*gpath){
+							//save to path
+							break;
+						}
+					} else break;
+				}
+				case AID_SAVE_AS:{
+					break;
+				}
                 default:
                 	break;
             }
@@ -303,6 +351,8 @@ void WinMainCRTStartup(){
 	instance = GetModuleHandleA(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+	AllocConsole();
+	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEA(49));
@@ -325,7 +375,8 @@ void WinMainCRTStartup(){
 	NONCLIENTMETRICSA ncm = {sizeof(NONCLIENTMETRICSA)};
 	SystemParametersInfoA(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSA),&ncm,0);
 	menufont = CreateFontIndirectA(&ncm.lfMenuFont);
-	background = CreateSolidBrush(RGB(20,20,20));
+	bBackground = CreateSolidBrush(RGB(20,20,20));
+	bMenuBackground = CreateSolidBrush(RGB(40,40,40));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
 	wc.hIcon = LoadIconA(instance,MAKEINTRESOURCEA(RID_ICON));
 	RegisterClassA(&wc);
@@ -333,7 +384,12 @@ void WinMainCRTStartup(){
 	AdjustWindowRect(&wr,WS_OVERLAPPEDWINDOW,FALSE);
 	i32 wndWidth = wr.right-wr.left;
 	i32 wndHeight = wr.bottom-wr.top;
-	gwnd = CreateWindowExA(WS_EX_APPWINDOW,wc.lpszClassName,wc.lpszClassName,WS_OVERLAPPEDWINDOW|WS_VISIBLE,GetSystemMetrics(SM_CXSCREEN)/2-wndWidth/2,GetSystemMetrics(SM_CYSCREEN)/2-wndHeight/2,wndWidth,wndHeight,0,0,instance,0);
+	i32 argc;
+	u16 **argv = CommandLineToArgvW(GetCommandLineW(),&argc);
+	if (argc==2){
+		loadFile(argv[1]);
+	} else CopyString(gpath,"Untitled");
+	CreateWindowExA(WS_EX_APPWINDOW,wc.lpszClassName,wc.lpszClassName,WS_OVERLAPPEDWINDOW|WS_VISIBLE,GetSystemMetrics(SM_CXSCREEN)/2-wndWidth/2,GetSystemMetrics(SM_CYSCREEN)/2-wndHeight/2,wndWidth,wndHeight,0,0,instance,0);
 	MSG msg;
 	while (GetMessageA(&msg,0,0,0)){
 		TranslateMessage(&msg);
