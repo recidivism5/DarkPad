@@ -1,1 +1,2 @@
 #include "res.h"
+RID_ICON ICON "icon.ico"

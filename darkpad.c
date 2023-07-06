@@ -159,20 +159,37 @@ RECT GetNonclientMenuBorderRect(HWND hwnd){
         y+1
     };
 }
+enum{
+	AID_NEW=169,
+	AID_OPEN,
+	AID_SAVE,
+	AID_SAVE_AS,
+	AID_UNDO,
+	AID_CUT,
+	AID_COPY,
+	AID_PASTE,
+	AID_SELECT_ALL,
+	AID_FIND,
+	AID_WORD_WRAP,
+	AID_FONT,
+	AID_ZOOM_IN,
+	AID_ZOOM_OUT,
+};
 i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_NCPAINT:
 			LRESULT result = DefWindowProcA(wnd,WM_NCPAINT,wparam,lparam);
-		case WM_SETFOCUS: case WM_KILLFOCUS:
+		case WM_SETFOCUS: case WM_KILLFOCUS:{
 			MENUBARINFO mbi = {sizeof(mbi)};
 			if (!GetMenuBarInfo(wnd,OBJID_MENU,0,&mbi)) return;
 			HDC hdc = GetWindowDC(wnd);
 			RECT r = GetNonclientMenuBorderRect(wnd);
-			HBRUSH red = CreateSolidBrush(RGB(255,0,0));
-			FillRect(hdc,&r,red);
-			DeleteObject(red);
+			HBRUSH brush = CreateSolidBrush(0x808080);
+			FillRect(hdc,&r,brush);
+			DeleteObject(brush);
 			ReleaseDC(wnd,hdc);
 			return result;
+		}
 		case WM_MEASUREITEM:
 			MEASUREITEMSTRUCT *mip = lparam;
 			mip->itemWidth = 30;
@@ -184,7 +201,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			HBRUSH oldBrush = SelectObject(dip->hDC,GetStockObject(DC_BRUSH));
 			SetBkMode(dip->hDC,TRANSPARENT);
 			SetTextColor(dip->hDC,RGB(255,255,255));
-			if (dip->itemState & ODS_HOTLIGHT){
+			if (dip->itemState & (ODS_HOTLIGHT|ODS_SELECTED)){
 				SetDCPenColor(dip->hDC,RGB(70,70,70));
 				SetDCBrushColor(dip->hDC,RGB(70,70,70));
 			} else {
@@ -200,8 +217,22 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			HMENU Bar = CreateMenu();
 			HMENU File = CreateMenu();
 			HMENU Edit = CreateMenu();
-			AppendMenuA(Bar,MF_OWNERDRAW,File,"File");
-			AppendMenuA(Bar,MF_OWNERDRAW,Edit,"Edit");
+			HMENU Format = CreateMenu();
+			AppendMenuA(File,MF_STRING,AID_NEW,"New\tCtrl+N");
+			AppendMenuA(File,MF_STRING,AID_OPEN,"Open\tCtrl+O");
+			AppendMenuA(File,MF_STRING,AID_SAVE,"Save\tCtrl+S");
+			AppendMenuA(File,MF_STRING,AID_SAVE_AS,"Save As\tCtrl+Shift+S");
+			AppendMenuA(Edit,MF_STRING,AID_UNDO,"Undo\tCtrl+Z");
+			AppendMenuA(Edit,MF_STRING,AID_CUT,"Cut\tCtrl+X");
+			AppendMenuA(Edit,MF_STRING,AID_COPY,"Copy\tCtrl+C");
+			AppendMenuA(Edit,MF_STRING,AID_PASTE,"Paste\tCtrl+V");
+			AppendMenuA(Edit,MF_STRING,AID_SELECT_ALL,"Select All\tCtrl+A");
+			AppendMenuA(Edit,MF_STRING,AID_FIND,"Find\tCtrl+F");
+			AppendMenuA(Format,MF_STRING|MF_CHECKED,AID_WORD_WRAP,"Word Wrap\tAlt+Z");
+			AppendMenuA(Format,MF_STRING,AID_FONT,"Font");
+			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,File,"File");
+			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Edit,"Edit");
+			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Format,"Format");
 			menuinfo.hbrBack = background;
 			SetMenuInfo(Bar,&menuinfo);
 			SetMenu(wnd,Bar);
@@ -224,6 +255,32 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetTextColor(wparam,0xcccccc);
 			SetBkColor(wparam,RGB(20,20,20));
 			return background;
+		case WM_COMMAND:
+			switch(LOWORD(wparam)){ 
+                case AID_OPEN:
+					IFileDialog *pfd;
+					IShellItem *psi;
+					PWSTR path = 0;
+					if (SUCCEEDED(CoCreateInstance(&CLSID_FileOpenDialog,0,CLSCTX_INPROC_SERVER,&IID_IFileOpenDialog,&pfd))){
+						pfd->lpVtbl->Show(pfd,wnd);
+						if (SUCCEEDED(pfd->lpVtbl->GetResult(pfd,&psi))){
+							if (SUCCEEDED(psi->lpVtbl->GetDisplayName(psi,SIGDN_FILESYSPATH,&path))){
+								/*WCHAR *p = path;
+								FOR(i,MAX_PATH){
+									if (!path[i]) break;
+									gpath[i] = path[i];
+								}
+								loadFile(gpath);*/
+								CoTaskMemFree(path);
+							}
+							psi->lpVtbl->Release(psi);
+						}
+						pfd->lpVtbl->Release(pfd);
+					}
+                default:
+                	break;
+            }
+            return 0;
 	}
 	return DefWindowProcA(wnd,msg,wparam,lparam);
 }
@@ -261,6 +318,7 @@ void WinMainCRTStartup(){
 
 	background = CreateSolidBrush(RGB(20,20,20));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
+	wc.hIcon = LoadIconA(instance,MAKEINTRESOURCEA(RID_ICON));
 	RegisterClassA(&wc);
 	RECT wr = {0,0,800,600};
 	AdjustWindowRect(&wr,WS_OVERLAPPEDWINDOW,FALSE);
