@@ -132,7 +132,7 @@ HINSTANCE instance;
 HWND gwnd,gedit;
 HANDLE consoleOut;
 HBRUSH background;
-HFONT font;
+HFONT font,menufont;
 void writeNum(i32 i){
 	u8 a[256];
 	intToAscii(i,a);
@@ -184,17 +184,23 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			if (!GetMenuBarInfo(wnd,OBJID_MENU,0,&mbi)) return;
 			HDC hdc = GetWindowDC(wnd);
 			RECT r = GetNonclientMenuBorderRect(wnd);
-			HBRUSH brush = CreateSolidBrush(0x808080);
+			HBRUSH brush = CreateSolidBrush(RGB(40,40,40));
 			FillRect(hdc,&r,brush);
 			DeleteObject(brush);
 			ReleaseDC(wnd,hdc);
 			return result;
 		}
-		case WM_MEASUREITEM:
+		case WM_MEASUREITEM:{
 			MEASUREITEMSTRUCT *mip = lparam;
-			mip->itemWidth = 30;
+			HDC hdc = GetDC(wnd);
+			SelectObject(hdc,menufont);
+			RECT r;
+			DrawTextA(hdc,mip->itemData,-1,&r,DT_LEFT|DT_SINGLELINE|DT_CALCRECT);
+			ReleaseDC(wnd,hdc);
+			mip->itemWidth = r.right-r.left;
 			mip->itemHeight = 0;
 			return 1;
+		}
 		case WM_DRAWITEM:
 			DRAWITEMSTRUCT *dip = lparam;
 			HPEN oldPen = SelectObject(dip->hDC,GetStockObject(DC_PEN));
@@ -205,8 +211,8 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 				SetDCPenColor(dip->hDC,RGB(70,70,70));
 				SetDCBrushColor(dip->hDC,RGB(70,70,70));
 			} else {
-				SetDCPenColor(dip->hDC,RGB(20,20,20));
-				SetDCBrushColor(dip->hDC,RGB(20,20,20));
+				SetDCPenColor(dip->hDC,RGB(40,40,40));
+				SetDCBrushColor(dip->hDC,RGB(40,40,40));
 			}
 			Rectangle(dip->hDC,dip->rcItem.left,dip->rcItem.top,dip->rcItem.right,dip->rcItem.bottom);
 			DrawTextA(dip->hDC,dip->itemData,-1,&dip->rcItem,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
@@ -233,7 +239,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,File,"File");
 			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Edit,"Edit");
 			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Format,"Format");
-			menuinfo.hbrBack = background;
+			menuinfo.hbrBack = CreateSolidBrush(RGB(40,40,40));
 			SetMenuInfo(Bar,&menuinfo);
 			SetMenu(wnd,Bar);
 			i32 t = 1;
@@ -316,6 +322,9 @@ void WinMainCRTStartup(){
 	impAddr->u1.Function = customOpenThemeData;
 	VirtualProtect(impAddr,sizeof(IMAGE_THUNK_DATA),oldProtect,&oldProtect);
 
+	NONCLIENTMETRICSA ncm = {sizeof(NONCLIENTMETRICSA)};
+	SystemParametersInfoA(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSA),&ncm,0);
+	menufont = CreateFontIndirectA(&ncm.lfMenuFont);
 	background = CreateSolidBrush(RGB(20,20,20));
 	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
 	wc.hIcon = LoadIconA(instance,MAKEINTRESOURCEA(RID_ICON));
