@@ -1,9 +1,4 @@
-/*
-	BUG TRACKER:
-	-crashes wcap when fullscreened
-*/
 #define WIN32_LEAN_AND_MEAN
-#undef UNICODE
 int _fltused;
 #include <windows.h>
 #include <dwmapi.h>
@@ -12,6 +7,7 @@ int _fltused;
 #include <shellapi.h>
 #include <shobjidl_core.h>
 #include <shlguid.h>
+#include <commdlg.h>
 #include "res.h"
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -72,7 +68,7 @@ void MoveMem(u8 *dst, u8 *src, size_t size){
 		}
 	} else memcpy(dst,src,size);
 }
-u8 *CopyString(u8 *dst, u8 *src){
+u16 *CopyString(u16 *dst, u16 *src){
 	while (*src) *dst++ = *src++;
 	*dst = 0;
 	return dst;
@@ -91,20 +87,6 @@ HANDLE heap;
 #define abs(x) ((x)<0 ? -(x) : (x))
 #define malloc(size) HeapAlloc(heap,0,(size))
 #define realloc(ptr,size) HeapReAlloc(heap,0,(ptr),(size))
-void intToAscii(i32 i, u8 *a){
-	u8 *p = a;
-	do {
-		*p++ = '0'+i%10;
-		i/=10;
-	} while (i);
-	*p = 0;
-	p--;
-	while (a < p){
-		u8 c = *a;
-		*a++ = *p;
-		*p-- = c;
-	}
-}
 i32 dpi;
 i32 dpiScale(i32 val){
     return (i32)((float)val * dpi / 96);
@@ -114,14 +96,7 @@ HWND gwnd,gedit;
 HANDLE consoleOut;
 HBRUSH bBackground,bMenuBackground,bOutline;
 HFONT font,menufont;
-u8 gpath[MAX_PATH+4];
-void writeNum(i32 i){
-	u8 a[256];
-	intToAscii(i,a);
-	WriteConsoleA(consoleOut,a,StringLength(a),0,0);
-	WriteConsoleA(consoleOut,"\r\n",2,0,0);
-}
-MENUINFO menuinfo = {sizeof(MENUINFO),MIM_BACKGROUND};
+u16 gpath[MAX_PATH+4];
 RECT MapRectFromClientToWndCoords(HWND hwnd, RECT r){
     MapWindowPoints(hwnd,0,&r,2);
     RECT s;
@@ -157,29 +132,26 @@ enum{
 	AID_ZOOM_IN,
 	AID_ZOOM_OUT,
 };
-void updateTitle(i32 modified){
-	u8 title[MAX_PATH+256];
-	CopyString(CopyString(title,modified ? "DarkPad - *" : "DarkPad - "),gpath);
-	SetWindowTextA(gwnd,title);
+i32 starred;
+void updateTitle(){
+	u16 title[MAX_PATH+32];
+	CopyString(CopyString(title,starred ? L"DarkPad - *" : L"DarkPad - "),*gpath ? gpath : L"Untitled");
+	SetWindowTextW(gwnd,title);
 }
 void loadFile(u16 *path){
-	i32 i = 0;
-	for (; i < MAX_PATH; i++){
-		gpath[i] = path[i];
-		if (!path[i]) break;
+	HANDLE hfile = CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
+	if (hfile == INVALID_HANDLE_VALUE){
+		MessageBoxW(gwnd,L"File not found.",L"Error",0);
+		return;
 	}
-	gpath[i] = 0;
-	WriteConsoleA(consoleOut,gpath,StringLength(gpath),0,0);
-	return;
-	HANDLE hfile = CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
-	u32 size = GetFileSize(hfile,NULL);
+	u32 size = GetFileSize(hfile,0);
 	u8 *file = HeapAlloc(heap,0,size);
-	u32 bytesRead = 0;
-	ReadFile(hfile,file,size,&bytesRead,NULL);
+	ReadFile(hfile,file,size,0,0);
 	CloseHandle(hfile);
 	u32 total = 4, used = 0;
 	u8 *str = HeapAlloc(heap,0,total);
-	for (u8 *f = file; f < file+size; f++){
+	u8 *f = file;
+	while (f < file+size){
 		if (used+2 > total){
 			while (used+2 > total) total *= 2;
 			str = HeapReAlloc(heap,0,str,total);
@@ -188,25 +160,55 @@ void loadFile(u16 *path){
 			str[used++] = '\r';
 			str[used++] = '\n';
 		} else str[used++] = *f;
+		f += 1 + (*f=='\r');
 	}
 	if (used==total){
 		total++;
 		str = HeapReAlloc(heap,0,str,total);
 	}
 	str[used++] = 0;
-	SendMessageA(gedit,WM_SETTEXT,0,str);
+	i32 wlen = MultiByteToWideChar(CP_UTF8,MB_PRECOMPOSED,str,used,0,0);
+	u16 *w = HeapAlloc(heap,0,wlen*sizeof(u16));
+	MultiByteToWideChar(CP_UTF8,MB_PRECOMPOSED,str,used,w,wlen);
+	SendMessageW(gedit,WM_SETTEXT,0,w);
 	HeapFree(heap,0,file);
 	HeapFree(heap,0,str);
+	HeapFree(heap,0,w);
+	CopyString(gpath,path);
+	starred = 0;
+	updateTitle();
+}
+void saveFile(u16 *path){
+	i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0);
+	u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
+	len = SendMessageW(gedit,WM_GETTEXT,len,buf);
+	i32 mlen = WideCharToMultiByte(CP_UTF8,0,buf,len,0,0,0,0);
+	u8 *m = HeapAlloc(heap,0,mlen);
+	WideCharToMultiByte(CP_UTF8,0,buf,len,m,mlen,0,0);
+	HANDLE hfile = CreateFileW(path,GENERIC_WRITE,0,0,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
+	WriteFile(hfile,m,mlen,0,0);
+	CloseHandle(hfile);
+	HeapFree(heap,0,buf);
+	HeapFree(heap,0,m);
+	CopyString(gpath,path);
+	starred = 0;
+	updateTitle();
 }
 i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_NCPAINT:
-			LRESULT result = DefWindowProcA(wnd,WM_NCPAINT,wparam,lparam);
+			LRESULT result = DefWindowProcW(wnd,WM_NCPAINT,wparam,lparam);
 		case WM_SETFOCUS: case WM_KILLFOCUS:{
 			MENUBARINFO mbi = {sizeof(mbi)};
 			if (!GetMenuBarInfo(wnd,OBJID_MENU,0,&mbi)) return;
+			RECT r, wr;
+			GetClientRect(wnd,&r);
+			MapWindowPoints(wnd,0,&r,2);
+			GetWindowRect(wnd,&wr);
+			OffsetRect(&r,-wr.left,-wr.top);
+			r.top--;
+			r.bottom = r.top+1;
 			HDC hdc = GetWindowDC(wnd);
-			RECT r = GetNonclientMenuBorderRect(wnd);
 			FillRect(hdc,&r,bMenuBackground);
 			ReleaseDC(wnd,hdc);
 			return result;
@@ -216,7 +218,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			HDC hdc = GetDC(wnd);
 			SelectObject(hdc,menufont);
 			RECT r;
-			DrawTextA(hdc,mip->itemData,-1,&r,DT_LEFT|DT_SINGLELINE|DT_CALCRECT);
+			DrawTextW(hdc,mip->itemData,-1,&r,DT_LEFT|DT_SINGLELINE|DT_CALCRECT);
 			ReleaseDC(wnd,hdc);
 			mip->itemWidth = r.right-r.left;
 			mip->itemHeight = 0;
@@ -236,40 +238,44 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 				SetDCBrushColor(dip->hDC,RGB(40,40,40));
 			}
 			Rectangle(dip->hDC,dip->rcItem.left,dip->rcItem.top,dip->rcItem.right,dip->rcItem.bottom);
-			DrawTextA(dip->hDC,dip->itemData,-1,&dip->rcItem,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
+			DrawTextW(dip->hDC,dip->itemData,-1,&dip->rcItem,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
 			SelectObject(dip->hDC,oldPen);
 			SelectObject(dip->hDC,oldBrush); 
 			return 1;
 		}
 		case WM_CREATE:{
 			gwnd = wnd;
-			updateTitle(0);
+			updateTitle();
 			HMENU Bar = CreateMenu();
 			HMENU File = CreateMenu();
 			HMENU Edit = CreateMenu();
 			HMENU Format = CreateMenu();
-			AppendMenuA(File,MF_STRING,AID_NEW,"New\tCtrl+N");
-			AppendMenuA(File,MF_STRING,AID_OPEN,"Open\tCtrl+O");
-			AppendMenuA(File,MF_STRING,AID_SAVE,"Save\tCtrl+S");
-			AppendMenuA(File,MF_STRING,AID_SAVE_AS,"Save As\tCtrl+Shift+S");
-			AppendMenuA(Edit,MF_STRING,AID_UNDO,"Undo\tCtrl+Z");
-			AppendMenuA(Edit,MF_STRING,AID_CUT,"Cut\tCtrl+X");
-			AppendMenuA(Edit,MF_STRING,AID_COPY,"Copy\tCtrl+C");
-			AppendMenuA(Edit,MF_STRING,AID_PASTE,"Paste\tCtrl+V");
-			AppendMenuA(Edit,MF_STRING,AID_SELECT_ALL,"Select All\tCtrl+A");
-			AppendMenuA(Edit,MF_STRING,AID_FIND,"Find\tCtrl+F");
-			AppendMenuA(Format,MF_STRING|MF_CHECKED,AID_WORD_WRAP,"Word Wrap\tAlt+Z");
-			AppendMenuA(Format,MF_STRING,AID_FONT,"Font");
-			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,File,"File");
-			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Edit,"Edit");
-			AppendMenuA(Bar,MF_OWNERDRAW|MF_POPUP,Format,"Format");
+			AppendMenuW(File,MF_STRING,AID_NEW,L"New\tCtrl+N");
+			AppendMenuW(File,MF_STRING,AID_OPEN,L"Open\tCtrl+O");
+			AppendMenuW(File,MF_STRING,AID_SAVE,L"Save\tCtrl+S");
+			AppendMenuW(File,MF_STRING,AID_SAVE_AS,L"Save As\tCtrl+Shift+S");
+			AppendMenuW(Edit,MF_STRING,AID_UNDO,L"Undo\tCtrl+Z");
+			AppendMenuW(Edit,MF_STRING,AID_CUT,L"Cut\tCtrl+X");
+			AppendMenuW(Edit,MF_STRING,AID_COPY,L"Copy\tCtrl+C");
+			AppendMenuW(Edit,MF_STRING,AID_PASTE,L"Paste\tCtrl+V");
+			AppendMenuW(Edit,MF_STRING,AID_SELECT_ALL,L"Select All\tCtrl+A");
+			AppendMenuW(Edit,MF_STRING,AID_FIND,L"Find\tCtrl+F");
+			AppendMenuW(Format,MF_STRING|MF_CHECKED,AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
+			AppendMenuW(Format,MF_STRING,AID_FONT,L"Font");
+			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,File,L"File");
+			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,Edit,L"Edit");
+			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,Format,L"Format");
+			MENUINFO menuinfo = {0};
+			menuinfo.cbSize = sizeof(MENUINFO);
+			menuinfo.fMask = MIM_BACKGROUND;
 			menuinfo.hbrBack = bMenuBackground;
 			SetMenuInfo(Bar,&menuinfo);
 			SetMenu(wnd,Bar);
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
-			gedit = CreateWindowExA(0,"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
-			SendMessageA(gedit,WM_SETFONT,font,0);
+			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
+			SendMessageW(gedit,WM_SETFONT,font,0);
+			SendMessageW(gedit,EM_SETLIMITTEXT,0x80000000,0);
 			break;
 		}
         case WM_SIZE:{
@@ -299,9 +305,18 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			return 0;
 		}
 		case WM_COMMAND:
-			if (HIWORD(wparam)==EN_CHANGE){
-				updateTitle(1);
-			} else switch(LOWORD(wparam)){ 
+			if (!starred && HIWORD(wparam)==EN_CHANGE){
+				starred = 1;
+				updateTitle();
+			} else switch(LOWORD(wparam)){
+				case AID_NEW:{
+					u16 zero = 0;
+					SendMessageW(gedit,WM_SETTEXT,0,&zero);
+					gpath[0] = 0;
+					starred = 0;
+					updateTitle();
+					break;
+				}
                 case AID_OPEN:{
 					IFileDialog *pfd;
 					IShellItem *psi;
@@ -311,7 +326,6 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 						if (SUCCEEDED(pfd->lpVtbl->GetResult(pfd,&psi))){
 							if (SUCCEEDED(psi->lpVtbl->GetDisplayName(psi,SIGDN_FILESYSPATH,&path))){
 								loadFile(path);
-								updateTitle(0);
 								CoTaskMemFree(path);
 							}
 							psi->lpVtbl->Release(psi);
@@ -321,14 +335,49 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					break;
 				}
 				case AID_SAVE:{
-					if (!*gpath || SendMessageA(gedit,EM_GETMODIFY,0,0)){
-						if (*gpath){
-							//save to path
-							break;
-						}
-					} else break;
+					if (*gpath && starred){
+						saveFile(gpath);
+						break;
+					}
 				}
 				case AID_SAVE_AS:{
+					IFileDialog *pfd;
+					IShellItem *psi;
+					PWSTR path = 0;
+					if (SUCCEEDED(CoCreateInstance(&CLSID_FileSaveDialog,0,CLSCTX_INPROC_SERVER,&IID_IFileSaveDialog,&pfd))){
+						pfd->lpVtbl->Show(pfd,wnd);
+						if (SUCCEEDED(pfd->lpVtbl->GetResult(pfd,&psi))){
+							if (SUCCEEDED(psi->lpVtbl->GetDisplayName(psi,SIGDN_FILESYSPATH,&path))){
+								saveFile(path);
+								CoTaskMemFree(path);
+							}
+							psi->lpVtbl->Release(psi);
+						}
+						pfd->lpVtbl->Release(pfd);
+					}
+					break;
+				}
+				case AID_FONT:{
+					LOGFONTW lf;
+					CHOOSEFONTW cf = {
+						sizeof(CHOOSEFONTW),
+						wnd,
+						0,
+						&lf,0,0,0,0,0,0,0,0,0,0,0,0,
+					};
+					if (!ChooseFontW(&cf)) break;
+					DeleteObject(font);
+					font = CreateFontIndirectW(&lf);
+					SendMessageW(gedit,WM_SETFONT,font,0);
+					HANDLE hfile = CreateFileW(L"font",GENERIC_WRITE,0,0,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
+					if (hfile==INVALID_HANDLE_VALUE){
+						wchar_t buf[256];
+						FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,0,GetLastError(),MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT),buf,(sizeof(buf)/sizeof(wchar_t)),0);
+						MessageBoxW(wnd,buf,L"Cannot open font cache file.",0);
+						break;
+					}
+					WriteFile(hfile,&lf,sizeof(lf),0,0);
+					CloseHandle(hfile);
 					break;
 				}
                 default:
@@ -336,9 +385,9 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
             }
             return 0;
 	}
-	return DefWindowProcA(wnd,msg,wparam,lparam);
+	return DefWindowProcW(wnd,msg,wparam,lparam);
 }
-WNDCLASSA wc = {0,WindowProc,0,0,0,0,0,0,0,"DarkPad"};
+WNDCLASSW wc = {0,WindowProc,0,0,0,0,0,0,0,L"DarkPad"};
 HTHEME(*OpenNcThemeData)(HWND wnd, LPCWSTR classList);
 HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	if (StringsEqualWide(classList,L"ScrollBar")){
@@ -348,16 +397,14 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	return OpenNcThemeData(wnd,classList);
 }
 void WinMainCRTStartup(){
-	instance = GetModuleHandleA(0);
+	instance = GetModuleHandleW(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-	AllocConsole();
-	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEA(49));
 	((i32 (*)(i32))GetProcAddress(uxtheme,MAKEINTRESOURCEA(135)))(1);
-	((void (*)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(104)))();
+	((void (*)())GetProcAddress(uxtheme,MAKEINTRESOURCEA(104)))();
 	u64 comctl = LoadLibraryExW(L"comctl32.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	PIMAGE_DELAYLOAD_DESCRIPTOR imports = comctl+((PIMAGE_NT_HEADERS)(comctl+((PIMAGE_DOS_HEADER)comctl)->e_lfanew))->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress;
 	while (!StringsEqualInsensitive(comctl+imports->DllNameRVA,"uxtheme.dll")) imports++;
@@ -372,28 +419,32 @@ void WinMainCRTStartup(){
 	impAddr->u1.Function = customOpenThemeData;
 	VirtualProtect(impAddr,sizeof(IMAGE_THUNK_DATA),oldProtect,&oldProtect);
 
-	NONCLIENTMETRICSA ncm = {sizeof(NONCLIENTMETRICSA)};
-	SystemParametersInfoA(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSA),&ncm,0);
-	menufont = CreateFontIndirectA(&ncm.lfMenuFont);
+	NONCLIENTMETRICSW ncm = {sizeof(NONCLIENTMETRICSW)};
+	SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSW),&ncm,0);
+	menufont = CreateFontIndirectW(&ncm.lfMenuFont);
 	bBackground = CreateSolidBrush(RGB(20,20,20));
 	bMenuBackground = CreateSolidBrush(RGB(40,40,40));
-	font = CreateFontA(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,"Consolas");
-	wc.hIcon = LoadIconA(instance,MAKEINTRESOURCEA(RID_ICON));
-	RegisterClassA(&wc);
+	HANDLE hfile = CreateFileW(L"font",GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
+	if (hfile!=INVALID_HANDLE_VALUE){
+		LOGFONTW lf;
+		ReadFile(hfile,&lf,sizeof(lf),0,0);
+		CloseHandle(hfile);
+		font = CreateFontIndirectW(&lf);
+	} else font = CreateFontW(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,L"Consolas");
+	wc.hIcon = LoadIconW(instance,MAKEINTRESOURCEA(RID_ICON));
+	RegisterClassW(&wc);
 	RECT wr = {0,0,800,600};
 	AdjustWindowRect(&wr,WS_OVERLAPPEDWINDOW,FALSE);
 	i32 wndWidth = wr.right-wr.left;
 	i32 wndHeight = wr.bottom-wr.top;
+	CreateWindowExW(WS_EX_APPWINDOW,wc.lpszClassName,wc.lpszClassName,WS_OVERLAPPEDWINDOW|WS_VISIBLE,GetSystemMetrics(SM_CXSCREEN)/2-wndWidth/2,GetSystemMetrics(SM_CYSCREEN)/2-wndHeight/2,wndWidth,wndHeight,0,0,instance,0);
 	i32 argc;
 	u16 **argv = CommandLineToArgvW(GetCommandLineW(),&argc);
-	if (argc==2){
-		loadFile(argv[1]);
-	} else CopyString(gpath,"Untitled");
-	CreateWindowExA(WS_EX_APPWINDOW,wc.lpszClassName,wc.lpszClassName,WS_OVERLAPPEDWINDOW|WS_VISIBLE,GetSystemMetrics(SM_CXSCREEN)/2-wndWidth/2,GetSystemMetrics(SM_CYSCREEN)/2-wndHeight/2,wndWidth,wndHeight,0,0,instance,0);
+	if (argc==2) loadFile(argv[1]);
 	MSG msg;
-	while (GetMessageA(&msg,0,0,0)){
+	while (GetMessageW(&msg,0,0,0)){
 		TranslateMessage(&msg);
-		DispatchMessageA(&msg);
+		DispatchMessageW(&msg);
 	}
 	ExitProcess(msg.wParam);
 }
