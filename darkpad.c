@@ -132,6 +132,22 @@ enum{
 	AID_ZOOM_IN,
 	AID_ZOOM_OUT,
 };
+ACCEL accels[]={
+    FCONTROL|FVIRTKEY,'N',AID_NEW,
+    FCONTROL|FVIRTKEY,'O',AID_OPEN,
+    FCONTROL|FVIRTKEY,'S',AID_SAVE,
+    FCONTROL|FSHIFT|FVIRTKEY,'S',AID_SAVE_AS,
+    FCONTROL|FVIRTKEY,'Z',AID_UNDO,
+    //FCONTROL|FSHIFT|FVIRTKEY,'Z',AID_REDO,
+    FCONTROL|FVIRTKEY,'X',AID_CUT,
+    FCONTROL|FVIRTKEY,'C',AID_COPY,
+    FCONTROL|FVIRTKEY,'V',AID_PASTE,
+    FCONTROL|FVIRTKEY,'F',AID_FIND,
+    //FCONTROL|FVIRTKEY,'G',AID_GO_TO_LINE,
+    FCONTROL|FVIRTKEY,'A',AID_SELECT_ALL,
+    //FCONTROL|FVIRTKEY,'T',AID_INSERT_TIMESTAMP,
+    FALT|FVIRTKEY,'Z',AID_WORD_WRAP,
+};
 i32 starred;
 void updateTitle(){
 	u16 title[MAX_PATH+32];
@@ -198,7 +214,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_NCPAINT:
 			LRESULT result = DefWindowProcW(wnd,WM_NCPAINT,wparam,lparam);
-		case WM_SETFOCUS: case WM_KILLFOCUS:{
+		case WM_SETFOCUS: SetFocus(gedit); case WM_KILLFOCUS:{
 			MENUBARINFO mbi = {sizeof(mbi)};
 			if (!GetMenuBarInfo(wnd,OBJID_MENU,0,&mbi)) return;
 			RECT r, wr;
@@ -442,9 +458,12 @@ void WinMainCRTStartup(){
 	u16 **argv = CommandLineToArgvW(GetCommandLineW(),&argc);
 	if (argc==2) loadFile(argv[1]);
 	MSG msg;
+	HACCEL haccel = CreateAcceleratorTableW(accels,COUNT(accels));
 	while (GetMessageW(&msg,0,0,0)){
-		TranslateMessage(&msg);
-		DispatchMessageW(&msg);
+		if (!TranslateAcceleratorW(gwnd,haccel,&msg)){
+			TranslateMessage(&msg);
+			DispatchMessageW(&msg);
+		}
 	}
 	ExitProcess(msg.wParam);
 }
