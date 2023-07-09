@@ -527,6 +527,7 @@ void WinMainCRTStartup(){
 		font = CreateFontIndirectW(&lf);
 	} else font = CreateFontW(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,L"Consolas");
 	wc.hIcon = LoadIconW(instance,MAKEINTRESOURCEA(RID_ICON));
+	wc.hbrBackground = bBackground;
 	RegisterClassW(&wc);
 	RECT wr = {0,0,800,600};
 	AdjustWindowRect(&wr,WS_OVERLAPPEDWINDOW,FALSE);
