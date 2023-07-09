@@ -73,8 +73,8 @@ u16 *CopyString(u16 *dst, u16 *src){
 	*dst = 0;
 	return dst;
 }
-i32 StringLength(u8 *s){
-	i32 n = 0;
+i64 StringLength(u16 *s){
+	i64 n = 0;
 	while (*s){
 		n++;
 		s++;
@@ -118,6 +118,7 @@ RECT GetNonclientMenuBorderRect(HWND hwnd){
 }
 enum{
 	AID_NEW=169,
+	AID_NEW_WINDOW,
 	AID_OPEN,
 	AID_SAVE,
 	AID_SAVE_AS,
@@ -125,23 +126,22 @@ enum{
 	AID_CUT,
 	AID_COPY,
 	AID_PASTE,
+	AID_DELETE,
 	AID_SELECT_ALL,
 	AID_FIND,
+	AID_REPLACE,
 	AID_WORD_WRAP,
 	AID_FONT,
 	AID_ZOOM_IN,
 	AID_ZOOM_OUT,
+	AID_RESET_ZOOM,
+	AID_STATUS_BAR,
 };
 ACCEL accels[]={
     FCONTROL|FVIRTKEY,'N',AID_NEW,
     FCONTROL|FVIRTKEY,'O',AID_OPEN,
     FCONTROL|FVIRTKEY,'S',AID_SAVE,
     FCONTROL|FSHIFT|FVIRTKEY,'S',AID_SAVE_AS,
-    FCONTROL|FVIRTKEY,'Z',AID_UNDO,
-    //FCONTROL|FSHIFT|FVIRTKEY,'Z',AID_REDO,
-    FCONTROL|FVIRTKEY,'X',AID_CUT,
-    FCONTROL|FVIRTKEY,'C',AID_COPY,
-    FCONTROL|FVIRTKEY,'V',AID_PASTE,
     FCONTROL|FVIRTKEY,'F',AID_FIND,
     //FCONTROL|FVIRTKEY,'G',AID_GO_TO_LINE,
     FCONTROL|FVIRTKEY,'A',AID_SELECT_ALL,
@@ -210,8 +210,67 @@ void saveFile(u16 *path){
 	starred = 0;
 	updateTitle();
 }
+UINT wm_find;
+u16 findbuf[512];
+u16 replacebuf[512];
+FINDREPLACEW findreplace = {
+	sizeof(FINDREPLACEW),
+	0,
+	0,
+	0,
+	findbuf,
+	replacebuf,
+	512*sizeof(u16),
+	512*sizeof(u16),
+	0,
+	0,
+	0
+};
 i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
-	switch (msg){
+	if (msg==wm_find){
+		FINDREPLACEW *fr = lparam;
+		if (fr->Flags & FR_FINDNEXT){
+			WriteConsoleW(consoleOut,L"FUCK",4,0,0);
+			i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
+			u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
+			SendMessageW(gedit,WM_GETTEXT,len,buf);
+			DWORD starti,endi;
+			SendMessageW(gedit,EM_GETSEL,&starti,&endi);
+			/*
+				1: go along checking for first char.
+				2: once found, check end char. if not equal go to 1.
+				3: check the chars in between.
+			*/
+			/*i64 whatlen = StringLength(fr->lpstrFindWhat);
+			u16 *start = buf+starti;
+			u16 *s = start;
+			u16 *end = buf+endi+1;
+			i32 searching = 1;
+			while (searching){
+				while (s!=end && *s!=fr->lpstrFindWhat[0]){
+					if (s==start) break; //not found
+					s++;
+				}
+				if (s==end) s = buf;
+				else {
+					if (end-s >= whatlen && s[whatlen-1]==fr->lpstrFindWhat[whatlen-1]){
+						for (i64 i = 1; i < whatlen; i++){
+							if (s[i]!=fr->lpstrFindWhat[i]) goto KEK;
+						}
+						//ExitProcess(1);
+						//SendMessageW(gedit,EM_SETSEL,s-buf,s+whatlen-buf);
+						SendMessageW(gedit,EM_SETSEL,0,-1);
+						searching = 0;
+						KEK:;
+					}
+					s++;
+				}
+			}*/
+			SendMessageW(gedit,EM_SETSEL,0,-1);
+			HeapFree(heap,0,buf);
+		}
+		return 0;
+	} else switch (msg){
 		case WM_NCPAINT:
 			LRESULT result = DefWindowProcW(wnd,WM_NCPAINT,wparam,lparam);
 		case WM_SETFOCUS: SetFocus(gedit); case WM_KILLFOCUS:{
@@ -266,7 +325,9 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			HMENU File = CreateMenu();
 			HMENU Edit = CreateMenu();
 			HMENU Format = CreateMenu();
+			HMENU View = CreateMenu();
 			AppendMenuW(File,MF_STRING,AID_NEW,L"New\tCtrl+N");
+			AppendMenuW(File,MF_STRING,AID_NEW_WINDOW,L"New Window\tCtrl+Shift+N");
 			AppendMenuW(File,MF_STRING,AID_OPEN,L"Open\tCtrl+O");
 			AppendMenuW(File,MF_STRING,AID_SAVE,L"Save\tCtrl+S");
 			AppendMenuW(File,MF_STRING,AID_SAVE_AS,L"Save As\tCtrl+Shift+S");
@@ -274,13 +335,22 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			AppendMenuW(Edit,MF_STRING,AID_CUT,L"Cut\tCtrl+X");
 			AppendMenuW(Edit,MF_STRING,AID_COPY,L"Copy\tCtrl+C");
 			AppendMenuW(Edit,MF_STRING,AID_PASTE,L"Paste\tCtrl+V");
+			AppendMenuW(Edit,MF_STRING,AID_DELETE,L"Delete\tDel");
 			AppendMenuW(Edit,MF_STRING,AID_SELECT_ALL,L"Select All\tCtrl+A");
+			AppendMenuW(Edit,MF_SEPARATOR,0,0);
 			AppendMenuW(Edit,MF_STRING,AID_FIND,L"Find\tCtrl+F");
-			AppendMenuW(Format,MF_STRING|MF_CHECKED,AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
+			AppendMenuW(Edit,MF_STRING,AID_REPLACE,L"Replace\tCtrl+R");
+			AppendMenuW(Format,MF_STRING,AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
 			AppendMenuW(Format,MF_STRING,AID_FONT,L"Font");
+			AppendMenuW(View,MF_STRING,AID_ZOOM_IN,L"Zoom In\tCtrl+Plus");
+			AppendMenuW(View,MF_STRING,AID_ZOOM_OUT,L"Zoom Out\tCtrl+Minus");
+			AppendMenuW(View,MF_STRING,AID_RESET_ZOOM,L"Reset Zoom\tCtrl+0");
+			AppendMenuW(View,MF_SEPARATOR,0,0);
+			AppendMenuW(View,MF_STRING,AID_STATUS_BAR,L"Status Bar");
 			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,File,L"File");
 			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,Edit,L"Edit");
 			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,Format,L"Format");
+			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,View,L"View");
 			MENUINFO menuinfo = {0};
 			menuinfo.cbSize = sizeof(MENUINFO);
 			menuinfo.fMask = MIM_BACKGROUND;
@@ -289,7 +359,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetMenu(wnd,Bar);
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
-			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL,0,0,0,0,wnd,0,instance,0);
+			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL,0,0,0,0,wnd,0,instance,0);
 			SendMessageW(gedit,WM_SETFONT,font,0);
 			SendMessageW(gedit,EM_SETLIMITTEXT,0x80000000,0);
 			break;
@@ -375,12 +445,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 				}
 				case AID_FONT:{
 					LOGFONTW lf;
-					CHOOSEFONTW cf = {
-						sizeof(CHOOSEFONTW),
-						wnd,
-						0,
-						&lf,0,0,0,0,0,0,0,0,0,0,0,0,
-					};
+					CHOOSEFONTW cf = {sizeof(CHOOSEFONTW),wnd,0,&lf,0,0,0,0,0,0,0,0,0,0,0,0};
 					if (!ChooseFontW(&cf)) break;
 					DeleteObject(font);
 					font = CreateFontIndirectW(&lf);
@@ -394,6 +459,15 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					}
 					WriteFile(hfile,&lf,sizeof(lf),0,0);
 					CloseHandle(hfile);
+					break;
+				}
+				case AID_FIND:{
+					findreplace.hwndOwner = wnd;
+					FindTextW(&findreplace);
+					break;
+				}
+				case AID_ZOOM_IN:{
+					SendMessageW(gedit,EM_SETSEL,0,-1);
 					break;
 				}
                 default:
@@ -416,6 +490,10 @@ void WinMainCRTStartup(){
 	instance = GetModuleHandleW(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#if 1
+	AllocConsole();
+	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+#endif
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEA(49));
@@ -435,6 +513,7 @@ void WinMainCRTStartup(){
 	impAddr->u1.Function = customOpenThemeData;
 	VirtualProtect(impAddr,sizeof(IMAGE_THUNK_DATA),oldProtect,&oldProtect);
 
+	wm_find = RegisterWindowMessageW(FINDMSGSTRINGW);
 	NONCLIENTMETRICSW ncm = {sizeof(NONCLIENTMETRICSW)};
 	SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSW),&ncm,0);
 	menufont = CreateFontIndirectW(&ncm.lfMenuFont);
