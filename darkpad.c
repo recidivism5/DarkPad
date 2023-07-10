@@ -210,24 +210,25 @@ void saveFile(u16 *path){
 	starred = 0;
 	updateTitle();
 }
-UINT wm_find;
-u16 findbuf[512];
-u16 replacebuf[512];
-FINDREPLACEW findreplace = {
-	sizeof(FINDREPLACEW),
-	0,
-	0,
-	0,
-	findbuf,
-	replacebuf,
-	512*sizeof(u16),
-	512*sizeof(u16),
-	0,
-	0,
-	0
-};
-i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
-	if (msg==wm_find){
+i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
+	switch (msg){
+		case WM_INITDIALOG:
+			i32 t = 1;
+			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
+			return 0;
+		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC:
+			SetBkMode(wparam,TRANSPARENT);
+			SetTextColor(wparam,RGB(255,255,255));
+			return bBackground;
+		case WM_CTLCOLOREDIT:
+			SetTextColor(wparam,0xffffff);
+			SetBkColor(wparam,RGB(20,20,20));
+			return bBackground;
+	}
+	return 0;
+}
+i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
+	if (0){
 		FINDREPLACEW *fr = lparam;
 		if (fr->Flags & FR_FINDNEXT){
 			WriteConsoleW(consoleOut,L"FUCK",4,0,0);
@@ -338,7 +339,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			AppendMenuW(Edit,MF_STRING,AID_DELETE,L"Delete\tDel");
 			AppendMenuW(Edit,MF_STRING,AID_SELECT_ALL,L"Select All\tCtrl+A");
 			AppendMenuW(Edit,MF_SEPARATOR,0,0);
-			AppendMenuW(Edit,MF_STRING,AID_FIND,L"Find\tCtrl+F");
+			AppendMenuW(Edit,MF_STRING,AID_FIND,L"Find And Replace\tCtrl+F");
 			AppendMenuW(Edit,MF_STRING,AID_REPLACE,L"Replace\tCtrl+R");
 			AppendMenuW(Format,MF_STRING,AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
 			AppendMenuW(Format,MF_STRING,AID_FONT,L"Font");
@@ -462,8 +463,7 @@ i32 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					break;
 				}
 				case AID_FIND:{
-					findreplace.hwndOwner = wnd;
-					FindTextW(&findreplace);
+					DialogBoxParamW(0,MAKEINTRESOURCEW(RID_FIND),wnd,FindProc,0);
 					break;
 				}
 				case AID_ZOOM_IN:{
@@ -513,7 +513,6 @@ void WinMainCRTStartup(){
 	impAddr->u1.Function = customOpenThemeData;
 	VirtualProtect(impAddr,sizeof(IMAGE_THUNK_DATA),oldProtect,&oldProtect);
 
-	wm_find = RegisterWindowMessageW(FINDMSGSTRINGW);
 	NONCLIENTMETRICSW ncm = {sizeof(NONCLIENTMETRICSW)};
 	SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSW),&ncm,0);
 	menufont = CreateFontIndirectW(&ncm.lfMenuFont);
