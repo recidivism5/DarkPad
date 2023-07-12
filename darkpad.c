@@ -38,6 +38,19 @@ i32 memcmp(u8 *s1, u8 *s2, i32 len){
 char toUpper(char c){
 	return c>='a' ? c-32 : c;
 }
+u16 *CopyString(u16 *dst, u16 *src){
+	while (*src) *dst++ = *src++;
+	*dst = 0;
+	return dst;
+}
+i64 StringLength(u16 *s){
+	i64 n = 0;
+	while (*s){
+		n++;
+		s++;
+	}
+	return n;
+}
 int StringsEqualInsensitive(char *a, char *b){
 	while (*a && *b && toUpper(*a)==toUpper(*b)){
 		a++;
@@ -68,32 +81,20 @@ void MoveMem(u8 *dst, u8 *src, size_t size){
 		}
 	} else memcpy(dst,src,size);
 }
-u16 *CopyString(u16 *dst, u16 *src){
-	while (*src) *dst++ = *src++;
-	*dst = 0;
-	return dst;
-}
-i64 StringLength(u16 *s){
-	i64 n = 0;
-	while (*s){
-		n++;
-		s++;
-	}
-	return n;
-}
 HANDLE heap;
 #define calloc(count,size) HeapAlloc(heap,HEAP_ZERO_MEMORY,(count)*(size))
 #define free(ptr) HeapFree(heap,0,(ptr))
 #define abs(x) ((x)<0 ? -(x) : (x))
 #define malloc(size) HeapAlloc(heap,0,(size))
 #define realloc(ptr,size) HeapReAlloc(heap,0,(ptr),(size))
+#define print(str) WriteConsoleW(consoleOut,str,StringLength(str),0,0); WriteConsoleW(consoleOut,L"\r\n",2,0,0);
 i32 dpi;
 i32 dpiScale(i32 val){
     return (i32)((float)val * dpi / 96);
 }
 HINSTANCE instance;
-HWND gwnd,gedit;
 HANDLE consoleOut;
+HWND gwnd,gedit;
 HBRUSH bBackground,bMenuBackground,bOutline;
 HFONT font,menufont;
 u16 gpath[MAX_PATH+4];
@@ -210,13 +211,20 @@ void saveFile(u16 *path){
 	starred = 0;
 	updateTitle();
 }
+i32 controlStyler(HWND wnd, LPARAM lparam){
+	u16 className[32];
+	GetClassNameW(wnd,className,COUNT(className));
+	if (StringsEqualWide(className,L"Button")) (GetWindowLongPtrW(wnd,GWL_STYLE) & BS_TYPEMASK) == BS_AUTOCHECKBOX ? SetWindowTheme(wnd,L"fake",L"fake") : SetWindowTheme(wnd,L"DarkMode_Explorer",0); //npp subclasses autocheckbox and draws it manually, but here we just set its theme to a nonexistent theme, reverting it to windows 2000 style which for some reason responds to SetTextColor. Looks decent enough for my purposes.
+	return 1;
+}
 i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_INITDIALOG:
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
+			EnumChildWindows(wnd,controlStyler,0);
 			return 0;
-		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC:
+		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN:
 			SetBkMode(wparam,TRANSPARENT);
 			SetTextColor(wparam,RGB(255,255,255));
 			return bBackground;
@@ -224,54 +232,81 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetTextColor(wparam,0xffffff);
 			SetBkColor(wparam,RGB(20,20,20));
 			return bBackground;
+		case WM_COMMAND:{
+			switch (LOWORD(wparam)){
+				case RID_FIND_WHAT:
+					print(L"Find what");
+					break;
+				case RID_FIND_WITH:
+					print(L"Find with");
+					break;
+				case RID_FIND_WHOLE:
+					print(L"Find whole");
+					break;
+				case RID_FIND_CASE:
+					print(L"Find case");
+					break;
+				case RID_FIND_UP: case RID_FIND_DOWN:{
+					i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
+					u16 *buf = HeapAlloc(heap,0,len*sizeof(*buf));
+					len = SendMessageW(gedit,WM_GETTEXT,len,buf);
+					HWND what = GetDlgItem(wnd,RID_FIND_WHAT);
+					i64 whatlen = SendMessageW(what,WM_GETTEXTLENGTH,0,0) + 1;
+					u16 *whatbuf = HeapAlloc(heap,0,whatlen*sizeof(*whatbuf));
+					whatlen = SendMessageW(what,WM_GETTEXT,whatlen,whatbuf);
+					DWORD starti,endi;
+					SendMessageW(gedit,EM_GETSEL,&starti,&endi);
+					if (LOWORD(wparam)==RID_FIND_UP){
+						u16 *s = buf+starti;
+						do {
+							if (s < buf) s = buf+len-1;
+							if (*s == whatbuf[whatlen-1] && (s-buf+1) >= whatlen && s[1-whatlen]==whatbuf[0]){
+								for (i32 i = -1; i > 1-whatlen; i--){
+									if (s[i]!=whatbuf[(whatlen-1)+i]) goto NO_MATCH_UP;
+								}
+								SendMessageW(gedit,EM_SETSEL,s-whatlen+1-buf,s+1-buf);
+								break;
+								NO_MATCH_UP:;
+							}
+							s--;
+						} while (s != buf+starti);
+					} else {
+						u32 s = starti;
+						do {
+							if (s == len) s = 0;
+							if (buf[s] == whatbuf[0] && len-s >= whatlen && buf[s+whatlen-1]==whatbuf[whatlen-1]){
+								for (i32 i = 1; i < whatlen-1; i++){
+									if (buf[s+i]!=whatbuf[i]) goto NO_MATCH;
+								}
+								if (s != starti || (endi-starti)!=whatlen){
+									SendMessageW(gedit,EM_SETSEL,s,s+whatlen);
+									break;
+								}
+								NO_MATCH:;
+							}
+							s++;
+						} while(s != starti);
+					}
+					HeapFree(heap,0,buf);
+					HeapFree(heap,0,whatbuf);
+					break;
+				}
+				case RID_FIND_REPLACE:
+					print(L"Replace");
+					break;
+				case RID_FIND_REPLACE_ALL:
+					print(L"Replace All");
+					break;
+				case IDCANCEL: 
+                    EndDialog(wnd,wparam); 
+                    return TRUE;
+			}
+		}
 	}
 	return 0;
 }
 i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
-	if (0){
-		FINDREPLACEW *fr = lparam;
-		if (fr->Flags & FR_FINDNEXT){
-			WriteConsoleW(consoleOut,L"FUCK",4,0,0);
-			i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
-			u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
-			SendMessageW(gedit,WM_GETTEXT,len,buf);
-			DWORD starti,endi;
-			SendMessageW(gedit,EM_GETSEL,&starti,&endi);
-			/*
-				1: go along checking for first char.
-				2: once found, check end char. if not equal go to 1.
-				3: check the chars in between.
-			*/
-			/*i64 whatlen = StringLength(fr->lpstrFindWhat);
-			u16 *start = buf+starti;
-			u16 *s = start;
-			u16 *end = buf+endi+1;
-			i32 searching = 1;
-			while (searching){
-				while (s!=end && *s!=fr->lpstrFindWhat[0]){
-					if (s==start) break; //not found
-					s++;
-				}
-				if (s==end) s = buf;
-				else {
-					if (end-s >= whatlen && s[whatlen-1]==fr->lpstrFindWhat[whatlen-1]){
-						for (i64 i = 1; i < whatlen; i++){
-							if (s[i]!=fr->lpstrFindWhat[i]) goto KEK;
-						}
-						//ExitProcess(1);
-						//SendMessageW(gedit,EM_SETSEL,s-buf,s+whatlen-buf);
-						SendMessageW(gedit,EM_SETSEL,0,-1);
-						searching = 0;
-						KEK:;
-					}
-					s++;
-				}
-			}*/
-			SendMessageW(gedit,EM_SETSEL,0,-1);
-			HeapFree(heap,0,buf);
-		}
-		return 0;
-	} else switch (msg){
+	switch (msg){
 		case WM_NCPAINT:
 			LRESULT result = DefWindowProcW(wnd,WM_NCPAINT,wparam,lparam);
 		case WM_SETFOCUS: SetFocus(gedit); case WM_KILLFOCUS:{
@@ -463,7 +498,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					break;
 				}
 				case AID_FIND:{
-					DialogBoxParamW(0,MAKEINTRESOURCEW(RID_FIND),wnd,FindProc,0);
+					ShowWindow(CreateDialogParamW(0,MAKEINTRESOURCEW(RID_FIND),wnd,FindProc,0),SW_SHOW);
 					break;
 				}
 				case AID_ZOOM_IN:{
@@ -496,9 +531,9 @@ void WinMainCRTStartup(){
 #endif
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
-	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEA(49));
-	((i32 (*)(i32))GetProcAddress(uxtheme,MAKEINTRESOURCEA(135)))(1);
-	((void (*)())GetProcAddress(uxtheme,MAKEINTRESOURCEA(104)))();
+	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEW(49));
+	((i32 (*)(i32))GetProcAddress(uxtheme,MAKEINTRESOURCEW(135)))(1);
+	((void (*)())GetProcAddress(uxtheme,MAKEINTRESOURCEW(104)))();
 	u64 comctl = LoadLibraryExW(L"comctl32.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	PIMAGE_DELAYLOAD_DESCRIPTOR imports = comctl+((PIMAGE_NT_HEADERS)(comctl+((PIMAGE_DOS_HEADER)comctl)->e_lfanew))->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress;
 	while (!StringsEqualInsensitive(comctl+imports->DllNameRVA,"uxtheme.dll")) imports++;
