@@ -397,7 +397,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
 			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL,0,0,0,0,wnd,0,instance,0);
 			SendMessageW(gedit,WM_SETFONT,font,0);
-			SendMessageW(gedit,EM_SETLIMITTEXT,0x80000000,0);
+			SendMessageW(gedit,EM_SETLIMITTEXT,UINT_MAX,0);
 			break;
 		}
         case WM_SIZE:{
