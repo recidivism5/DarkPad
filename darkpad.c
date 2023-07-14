@@ -87,7 +87,7 @@ HANDLE heap;
 #define abs(x) ((x)<0 ? -(x) : (x))
 #define malloc(size) HeapAlloc(heap,0,(size))
 #define realloc(ptr,size) HeapReAlloc(heap,0,(ptr),(size))
-#define CONSOLE 0
+#define CONSOLE 1
 #if CONSOLE
 HANDLE consoleOut;
 #define print(str) WriteConsoleW(consoleOut,str,StringLength(str),0,0); WriteConsoleW(consoleOut,L"\r\n",2,0,0);
@@ -228,6 +228,16 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
 			EnumChildWindows(wnd,controlStyler,0);
+
+			HKEY key;
+			RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+			DWORD v,vsize = sizeof(v);
+			RegQueryValueExW(key,L"matchcase",0,0,&v,&vsize);
+			SendMessageW(GetDlgItem(wnd,RID_FIND_CASE),BM_SETCHECK,v ? BST_CHECKED : BST_UNCHECKED,0);
+			vsize = sizeof(v);
+			RegQueryValueExW(key,L"matchwholeword",0,0,&v,&vsize);
+			SendMessageW(GetDlgItem(wnd,RID_FIND_WHOLE),BM_SETCHECK,v ? BST_CHECKED : BST_UNCHECKED,0);
+			RegCloseKey(key);
 			return 0;
 		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN:
 			SetBkMode(wparam,TRANSPARENT);
@@ -245,12 +255,22 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 				case RID_FIND_WITH:
 					print(L"Find with");
 					break;
-				case RID_FIND_WHOLE:
-					print(L"Find whole");
+				case RID_FIND_WHOLE:{
+					HKEY key;
+					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+					DWORD v = SendMessageW(lparam,BM_GETCHECK,0,0)==BST_CHECKED ? 1 : 0;
+					RegSetValueExW(key,L"matchwholeword",0,REG_DWORD,&v,sizeof(v));
+					RegCloseKey(key);
 					break;
-				case RID_FIND_CASE:
-					print(L"Find case");
+				}
+				case RID_FIND_CASE:{
+					HKEY key;
+					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+					DWORD v = SendMessageW(lparam,BM_GETCHECK,0,0)==BST_CHECKED ? 1 : 0;
+					RegSetValueExW(key,L"matchcase",0,REG_DWORD,&v,sizeof(v));
+					RegCloseKey(key);
 					break;
+				}
 				case RID_FIND_REPLACE: case RID_FIND_UP: case RID_FIND_DOWN:{
 					i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
 					u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
