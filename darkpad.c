@@ -385,7 +385,12 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			AppendMenuW(Edit,MF_STRING,AID_SELECT_ALL,L"Select All\tCtrl+A");
 			AppendMenuW(Edit,MF_SEPARATOR,0,0);
 			AppendMenuW(Edit,MF_STRING,AID_FIND,L"Find And Replace\tCtrl+F");
-			AppendMenuW(Format,MF_STRING,AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
+			HKEY key;
+			RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+			DWORD wordwrap,vsize = sizeof(wordwrap);
+			RegQueryValueExW(key,L"wordwrap",0,0,&wordwrap,&vsize);
+			RegCloseKey(key);
+			AppendMenuW(Format,MF_STRING|(wordwrap ? MF_CHECKED : 0),AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
 			AppendMenuW(Format,MF_STRING,AID_FONT,L"Font");
 			AppendMenuW(View,MF_STRING,AID_ZOOM_IN,L"Zoom In\tCtrl+Plus");
 			AppendMenuW(View,MF_STRING,AID_ZOOM_OUT,L"Zoom Out\tCtrl+Minus");
@@ -404,11 +409,6 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetMenu(wnd,Bar);
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
-			HKEY key;
-			RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
-			DWORD wordwrap,vsize = sizeof(wordwrap);
-			RegQueryValueExW(key,L"wordwrap",0,0,&wordwrap,&vsize);
-			RegCloseKey(key);
 			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL|(wordwrap ? 0 : (WS_HSCROLL|ES_AUTOHSCROLL)),0,0,0,0,wnd,0,instance,0);
 			SendMessageW(gedit,WM_SETFONT,font,0);
 			SendMessageW(gedit,EM_SETLIMITTEXT,UINT_MAX,0);
