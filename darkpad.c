@@ -87,13 +87,18 @@ HANDLE heap;
 #define abs(x) ((x)<0 ? -(x) : (x))
 #define malloc(size) HeapAlloc(heap,0,(size))
 #define realloc(ptr,size) HeapReAlloc(heap,0,(ptr),(size))
+#define CONSOLE 0
+#if CONSOLE
+HANDLE consoleOut;
 #define print(str) WriteConsoleW(consoleOut,str,StringLength(str),0,0); WriteConsoleW(consoleOut,L"\r\n",2,0,0);
+#else
+#define print(str)
+#endif
 i32 dpi;
 i32 dpiScale(i32 val){
     return (i32)((float)val * dpi / 96);
 }
 HINSTANCE instance;
-HANDLE consoleOut;
 HWND gwnd,gedit;
 HBRUSH bBackground,bMenuBackground,bOutline;
 HFONT font,menufont;
@@ -246,14 +251,18 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 				case RID_FIND_CASE:
 					print(L"Find case");
 					break;
-				case RID_FIND_UP: case RID_FIND_DOWN:{
+				case RID_FIND_REPLACE: case RID_FIND_UP: case RID_FIND_DOWN:{
 					i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
-					u16 *buf = HeapAlloc(heap,0,len*sizeof(*buf));
+					u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
 					len = SendMessageW(gedit,WM_GETTEXT,len,buf);
 					HWND what = GetDlgItem(wnd,RID_FIND_WHAT);
 					i64 whatlen = SendMessageW(what,WM_GETTEXTLENGTH,0,0) + 1;
-					u16 *whatbuf = HeapAlloc(heap,0,whatlen*sizeof(*whatbuf));
+					u16 *whatbuf = HeapAlloc(heap,0,whatlen*sizeof(u16));
 					whatlen = SendMessageW(what,WM_GETTEXT,whatlen,whatbuf);
+					HWND with = GetDlgItem(wnd,RID_FIND_WITH);
+					i64 withlen = SendMessageW(with,WM_GETTEXTLENGTH,0,0) + 1;
+					u16 *withbuf = HeapAlloc(heap,0,withlen*sizeof(u16));
+					withlen = SendMessageW(with,WM_GETTEXT,withlen,withbuf);
 					DWORD starti,endi;
 					SendMessageW(gedit,EM_GETSEL,&starti,&endi);
 					if (LOWORD(wparam)==RID_FIND_UP){
@@ -281,6 +290,8 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 								if (s != starti || (endi-starti)!=whatlen){
 									SendMessageW(gedit,EM_SETSEL,s,s+whatlen);
 									break;
+								} else if (LOWORD(wparam)==RID_FIND_REPLACE){
+									SendMessageW(gedit,EM_REPLACESEL,1,withbuf);
 								}
 								NO_MATCH:;
 							}
@@ -289,11 +300,9 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					}
 					HeapFree(heap,0,buf);
 					HeapFree(heap,0,whatbuf);
+					HeapFree(heap,0,withbuf);
 					break;
 				}
-				case RID_FIND_REPLACE:
-					print(L"Replace");
-					break;
 				case RID_FIND_REPLACE_ALL:
 					print(L"Replace All");
 					break;
@@ -305,6 +314,7 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	}
 	return 0;
 }
+HMENU Format;
 i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_NCPAINT:
@@ -360,7 +370,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			HMENU Bar = CreateMenu();
 			HMENU File = CreateMenu();
 			HMENU Edit = CreateMenu();
-			HMENU Format = CreateMenu();
+			Format = CreateMenu();
 			HMENU View = CreateMenu();
 			AppendMenuW(File,MF_STRING,AID_NEW,L"New\tCtrl+N");
 			AppendMenuW(File,MF_STRING,AID_NEW_WINDOW,L"New Window\tCtrl+Shift+N");
@@ -375,7 +385,6 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			AppendMenuW(Edit,MF_STRING,AID_SELECT_ALL,L"Select All\tCtrl+A");
 			AppendMenuW(Edit,MF_SEPARATOR,0,0);
 			AppendMenuW(Edit,MF_STRING,AID_FIND,L"Find And Replace\tCtrl+F");
-			AppendMenuW(Edit,MF_STRING,AID_REPLACE,L"Replace\tCtrl+R");
 			AppendMenuW(Format,MF_STRING,AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
 			AppendMenuW(Format,MF_STRING,AID_FONT,L"Font");
 			AppendMenuW(View,MF_STRING,AID_ZOOM_IN,L"Zoom In\tCtrl+Plus");
@@ -395,7 +404,12 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetMenu(wnd,Bar);
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
-			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL,0,0,0,0,wnd,0,instance,0);
+			HKEY key;
+			RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+			DWORD wordwrap,vsize = sizeof(wordwrap);
+			RegQueryValueExW(key,L"wordwrap",0,0,&wordwrap,&vsize);
+			RegCloseKey(key);
+			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL|(wordwrap ? 0 : (WS_HSCROLL|ES_AUTOHSCROLL)),0,0,0,0,wnd,0,instance,0);
 			SendMessageW(gedit,WM_SETFONT,font,0);
 			SendMessageW(gedit,EM_SETLIMITTEXT,UINT_MAX,0);
 			break;
@@ -486,19 +500,45 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					DeleteObject(font);
 					font = CreateFontIndirectW(&lf);
 					SendMessageW(gedit,WM_SETFONT,font,0);
-					HANDLE hfile = CreateFileW(L"font",GENERIC_WRITE,0,0,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
-					if (hfile==INVALID_HANDLE_VALUE){
-						wchar_t buf[256];
-						FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,0,GetLastError(),MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT),buf,(sizeof(buf)/sizeof(wchar_t)),0);
-						MessageBoxW(wnd,buf,L"Cannot open font cache file.",0);
-						break;
-					}
-					WriteFile(hfile,&lf,sizeof(lf),0,0);
-					CloseHandle(hfile);
+					HKEY key;
+					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+					RegSetValueExW(key,L"font",0,REG_BINARY,&lf,sizeof(lf));
+					RegCloseKey(key);
 					break;
 				}
 				case AID_FIND:{
 					ShowWindow(CreateDialogParamW(0,MAKEINTRESOURCEW(RID_FIND),wnd,FindProc,0),SW_SHOW);
+					break;
+				}
+				case AID_WORD_WRAP:{
+					MENUITEMINFOW mii = {0};
+					mii.cbSize = sizeof(MENUITEMINFOW);
+					mii.fMask = MIIM_STATE;
+					GetMenuItemInfoW(Format,AID_WORD_WRAP,0,&mii);
+					HKEY key;
+					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+					DWORD v;
+					if (mii.fState == MFS_CHECKED){
+						mii.fState = MFS_UNCHECKED;
+						v = 0;
+					} else {
+						mii.fState = MFS_CHECKED;
+						v = 1;
+					}
+					HWND newedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL|(v ? 0 : (WS_HSCROLL|ES_AUTOHSCROLL)),0,0,0,0,wnd,0,instance,0);
+					SendMessageW(newedit,WM_SETFONT,font,0);
+					SendMessageW(newedit,EM_SETLIMITTEXT,UINT_MAX,0);
+					HLOCAL eh = SendMessageW(gedit,EM_GETHANDLE,0,0);
+					SendMessageW(newedit,WM_SETTEXT,0,LocalLock(eh));
+					LocalUnlock(eh);
+					DestroyWindow(gedit);
+					gedit = newedit;
+					RECT r;
+					GetClientRect(wnd,&r);
+					MoveWindow(gedit,0,0,r.right,r.bottom-22,1);
+					RegSetValueExW(key,L"wordwrap",0,REG_DWORD,&v,sizeof(v));
+					RegCloseKey(key);
+					SetMenuItemInfoW(Format,AID_WORD_WRAP,0,&mii);
 					break;
 				}
 				case AID_ZOOM_IN:{
@@ -525,7 +565,7 @@ void WinMainCRTStartup(){
 	instance = GetModuleHandleW(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-#if 1
+#if CONSOLE
 	AllocConsole();
 	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
 #endif
@@ -553,13 +593,15 @@ void WinMainCRTStartup(){
 	menufont = CreateFontIndirectW(&ncm.lfMenuFont);
 	bBackground = CreateSolidBrush(RGB(20,20,20));
 	bMenuBackground = CreateSolidBrush(RGB(40,40,40));
-	HANDLE hfile = CreateFileW(L"font",GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
-	if (hfile!=INVALID_HANDLE_VALUE){
-		LOGFONTW lf;
-		ReadFile(hfile,&lf,sizeof(lf),0,0);
-		CloseHandle(hfile);
-		font = CreateFontIndirectW(&lf);
-	} else font = CreateFontW(-12,0,0,0,FW_DONTCARE,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FF_DONTCARE,L"Consolas");
+
+	LOGFONTW lf;
+	HKEY key;
+	RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+	DWORD vsize = sizeof(lf);
+	RegQueryValueExW(key,L"font",0,0,&lf,&vsize);
+	RegCloseKey(key);
+	font = CreateFontIndirectW(&lf);
+
 	wc.hIcon = LoadIconW(instance,MAKEINTRESOURCEA(RID_ICON));
 	wc.hbrBackground = bBackground;
 	RegisterClassW(&wc);

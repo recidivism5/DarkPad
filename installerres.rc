@@ -1,0 +1,5 @@
+#include "installerres.h"
+RID_ICON ICON "icon.ico"
+RID_DARKPAD RCDATA "darkpad.exe"
+RID_UNINSTALLER RCDATA "uninstaller.exe"
+RID_FONT RCDATA "font"

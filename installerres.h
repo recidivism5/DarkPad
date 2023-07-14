@@ -1,0 +1,4 @@
+#define RID_ICON 69
+#define RID_DARKPAD 70
+#define RID_UNINSTALLER 71
+#define RID_FONT 72
