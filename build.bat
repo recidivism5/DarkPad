@@ -4,15 +4,15 @@ if not defined DevEnvDir (
 )
 tcc -run iconwriter.c icon16.png icon32.png icon.ico
 rc res.rc
-cl /nologo /O1 /w /Gz /GS- darkpad.c /link /nodefaultlib /subsystem:windows kernel32.lib shell32.lib gdi32.lib user32.lib ole32.lib uuid.lib dwmapi.lib comdlg32.lib uxtheme.lib advapi32.lib res.res
+cl /nologo /O1 /w /Gz /GS- darkpad.c /link /nodefaultlib /subsystem:windows kernel32.lib shell32.lib gdi32.lib user32.lib ole32.lib uuid.lib dwmapi.lib comdlg32.lib uxtheme.lib advapi32.lib msvcrt.lib res.res
 mt.exe -manifest darkpad.exe.manifest -outputresource:darkpad.exe;1
 del darkpad.obj
 del res.res
-cl /nologo /O1 /w /Gz /GS- uninstaller.c /link /nodefaultlib /subsystem:windows kernel32.lib shell32.lib gdi32.lib user32.lib ole32.lib uuid.lib dwmapi.lib comdlg32.lib uxtheme.lib advapi32.lib
+cl /nologo /O1 /w /Gz /GS- uninstaller.c /link /nodefaultlib /subsystem:windows kernel32.lib shell32.lib gdi32.lib user32.lib ole32.lib uuid.lib dwmapi.lib comdlg32.lib uxtheme.lib advapi32.lib msvcrt.lib
 mt.exe -manifest uninstaller.exe.manifest -outputresource:uninstaller.exe;1
 del uninstaller.obj
 rc installerres.rc
-cl /nologo /O1 /w /Gz /GS- installer.c /link /nodefaultlib /subsystem:windows kernel32.lib shell32.lib gdi32.lib user32.lib ole32.lib uuid.lib dwmapi.lib comdlg32.lib uxtheme.lib advapi32.lib installerres.res
+cl /nologo /O1 /w /Gz /GS- installer.c /link /nodefaultlib /subsystem:windows kernel32.lib shell32.lib gdi32.lib user32.lib ole32.lib uuid.lib dwmapi.lib comdlg32.lib uxtheme.lib advapi32.lib msvcrt.lib installerres.res
 mt.exe -manifest installer.exe.manifest -outputresource:installer.exe;1
 del installer.obj
 del installerres.res

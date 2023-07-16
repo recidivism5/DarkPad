@@ -8,8 +8,11 @@
 - link uninstall.exe in HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall (https://learn.microsoft.com/en-us/windows/win32/msi/configuring-add-remove-programs-with-windows-installer)
 - put shortcut in %appdata%\Microsoft\Windows\Start Menu\Programs (https://gist.github.com/abel0b/0b740648d6370e3e77fd70a816a34523) or maybe (https://learn.microsoft.com/en-us/windows/win32/shell/how-to-add-shortcuts-to-the-start-menu)
 */
+#define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
 int _fltused;
+#include <stdio.h>
+#include <string.h>
 #include <windows.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -32,31 +35,6 @@ typedef signed long long i64;
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define COUNT(arr) (sizeof(arr)/sizeof(*arr))
 #define FOR(var,count) for(i32 var = 0; var < (count); var++)
-void *memset(u8 *dst, int c, size_t size){
-	while (size--) *dst++ = c;
-	return dst;
-}
-void *memcpy(u8 *dst, u8 *src, size_t size){
-	while (size--) *dst++ = *src++;
-	return dst;
-}
-u16 *EndOf(u16 *s){
-	while (*s) s++;
-	return s;
-}
-u16 *CopyString(u16 *dst, u16 *src){
-	while (*src) *dst++ = *src++;
-	*dst = 0;
-	return dst;
-}
-i64 StringLength(u16 *s){
-	i64 n = 0;
-	while (*s){
-		n++;
-		s++;
-	}
-	return n;
-}
 #define CONSOLE 0
 #if CONSOLE
 HANDLE consoleOut;
@@ -77,10 +55,10 @@ void WinMainCRTStartup(){
 #endif
 
 	SHGetSpecialFolderPathW(0,path,CSIDL_LOCAL_APPDATA,0);
-	CopyString(EndOf(path),L"\\darkpad");
+	wcscat(path,L"\\darkpad");
 	CreateDirectoryW(path,0);
 
-	CopyString(EndOf(path),L"\\darkpad.exe");
+	wcscat(path,L"\\darkpad.exe");
 	HANDLE hfile = CreateFileW(path,GENERIC_WRITE,0,0,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
 	HRSRC res = FindResourceW(instance,MAKEINTRESOURCEW(RID_DARKPAD),RT_RCDATA);
 	u8 *data = LockResource(LoadResource(0,res));
@@ -96,14 +74,14 @@ void WinMainCRTStartup(){
 	psl->lpVtbl->QueryInterface(psl,&IID_IPersistFile,&ppf);
 	u16 *prgs;
 	SHGetKnownFolderPath(&FOLDERID_Programs,0,0,&prgs);
-	CopyString(CopyString(path,prgs),L"\\DarkPad.lnk");
+	_snwprintf(path,COUNT(path),L"%s%s",prgs,L"\\DarkPad.lnk");
 	ppf->lpVtbl->Save(ppf,path,1);
     ppf->lpVtbl->Release(ppf);
 	psl->lpVtbl->Release(psl);
 	CoTaskMemFree(prgs);
 
 	SHGetSpecialFolderPathW(0,path,CSIDL_LOCAL_APPDATA,0);
-	CopyString(EndOf(path),L"\\darkpad\\uninstaller.exe");
+	wcscat(path,L"\\darkpad\\uninstaller.exe");
 	hfile = CreateFileW(path,GENERIC_WRITE,0,0,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
 	res = FindResourceW(instance,MAKEINTRESOURCEW(RID_UNINSTALLER),RT_RCDATA);
 	data = LockResource(LoadResource(0,res));
@@ -128,12 +106,12 @@ void WinMainCRTStartup(){
 	RegSetValueExW(key,L"DisplayName",0,REG_SZ,L"DarkPad",sizeof(L"DarkPad"));
 	RegSetValueExW(key,L"DisplayVersion",0,REG_SZ,L"1",sizeof(L"1"));
 	RegSetValueExW(key,L"Publisher",0,REG_SZ,L"Dark Software",sizeof(L"Dark Software"));
-	RegSetValueExW(key,L"UninstallString",0,REG_SZ,path,StringLength(path)*2+2);
+	RegSetValueExW(key,L"UninstallString",0,REG_SZ,path,wcslen(path)*2+2);
 	SHGetSpecialFolderPathW(0,path,CSIDL_LOCAL_APPDATA,0);
-	CopyString(EndOf(path),L"\\darkpad");
-	RegSetValueExW(key,L"InstallLocation",0,REG_SZ,path,StringLength(path)*2+2);
-	CopyString(EndOf(path),L"\\darkpad.exe");
-	RegSetValueExW(key,L"DisplayIcon",0,REG_SZ,path,StringLength(path)*2+2);
+	wcscat(path,L"\\darkpad");
+	RegSetValueExW(key,L"InstallLocation",0,REG_SZ,path,wcslen(path)*2+2);
+	wcscat(path,L"\\darkpad.exe");
+	RegSetValueExW(key,L"DisplayIcon",0,REG_SZ,path,wcslen(path)*2+2);
 	d = 20;
 	RegSetValueExW(key,L"EstimatedSize",0,REG_DWORD,&d,sizeof(d));
 	RegCloseKey(key);

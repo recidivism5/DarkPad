@@ -1,5 +1,8 @@
+#define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
 int _fltused;
+#include <stdio.h>
+#include <string.h>
 #include <windows.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -20,67 +23,6 @@ typedef signed long long i64;
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define COUNT(arr) (sizeof(arr)/sizeof(*arr))
-#define FOR(var,count) for(i32 var = 0; var < (count); var++)
-void *memset(u8 *dst, int c, size_t size){
-	while (size--) *dst++ = c;
-	return dst;
-}
-void *memcpy(u8 *dst, u8 *src, size_t size){
-	while (size--) *dst++ = *src++;
-	return dst;
-}
-i32 memcmp(u8 *s1, u8 *s2, i32 len){
-	for (int i = 0; i < len; i++){
-		if (s1[i]!=s2[i]) return 1;
-	}
-	return 0;
-}
-char toUpper(char c){
-	return c>='a' ? c-32 : c;
-}
-u16 *CopyString(u16 *dst, u16 *src){
-	while (*src) *dst++ = *src++;
-	*dst = 0;
-	return dst;
-}
-i64 StringLength(u16 *s){
-	i64 n = 0;
-	while (*s){
-		n++;
-		s++;
-	}
-	return n;
-}
-int StringsEqualInsensitive(char *a, char *b){
-	while (*a && *b && toUpper(*a)==toUpper(*b)){
-		a++;
-		b++;
-	}
-	return *a==*b;
-}
-i32 StringsEqual(u8 *a, u8 *b){
-	while (*a && *b && *a==*b){
-		a++;
-		b++;
-	}
-	return *a==*b;
-}
-i32 StringsEqualWide(u16 *a, u16 *b){
-	while (*a && *b && *a==*b){
-		a++;
-		b++;
-	}
-	return *a==*b;
-}
-void MoveMem(u8 *dst, u8 *src, size_t size){
-	if (dst > src){
-		dst += size-1;
-		src += size-1;
-		while (size--){
-			*dst-- = *src--;
-		}
-	} else memcpy(dst,src,size);
-}
 HANDLE heap;
 #define calloc(count,size) HeapAlloc(heap,HEAP_ZERO_MEMORY,(count)*(size))
 #define free(ptr) HeapFree(heap,0,(ptr))
@@ -90,7 +32,7 @@ HANDLE heap;
 #define CONSOLE 1
 #if CONSOLE
 HANDLE consoleOut;
-#define print(str) WriteConsoleW(consoleOut,str,StringLength(str),0,0); WriteConsoleW(consoleOut,L"\r\n",2,0,0);
+#define print(str) WriteConsoleW(consoleOut,str,wcslen(str),0,0); WriteConsoleW(consoleOut,L"\r\n",2,0,0);
 #else
 #define print(str)
 #endif
@@ -103,25 +45,6 @@ HWND gwnd,gedit;
 HBRUSH bBackground,bMenuBackground,bOutline;
 HFONT font,menufont;
 u16 gpath[MAX_PATH+4];
-RECT MapRectFromClientToWndCoords(HWND hwnd, RECT r){
-    MapWindowPoints(hwnd,0,&r,2);
-    RECT s;
-    GetWindowRect(hwnd,&s);
-    OffsetRect(&r,-s.left,-s.top);
-    return r;
-}
-RECT GetNonclientMenuBorderRect(HWND hwnd){
-    RECT r;
-    GetClientRect(hwnd,&r);
-    r = MapRectFromClientToWndCoords(hwnd,r);
-    int y = r.top - 1;
-    return (RECT){
-        r.left,
-        y,
-        r.right,
-        y+1
-    };
-}
 enum{
 	AID_NEW=169,
 	AID_NEW_WINDOW,
@@ -138,6 +61,7 @@ enum{
 	AID_REPLACE,
 	AID_WORD_WRAP,
 	AID_FONT,
+	AID_COLORS,
 	AID_ZOOM_IN,
 	AID_ZOOM_OUT,
 	AID_RESET_ZOOM,
@@ -157,7 +81,7 @@ ACCEL accels[]={
 i32 starred;
 void updateTitle(){
 	u16 title[MAX_PATH+32];
-	CopyString(CopyString(title,starred ? L"DarkPad - *" : L"DarkPad - "),*gpath ? gpath : L"Untitled");
+	_snwprintf(title,COUNT(title),L"%s%s - DarkPad",starred ? L"*" : L"",*gpath ? gpath : L"Untitled");
 	SetWindowTextW(gwnd,title);
 }
 void loadFile(u16 *path){
@@ -196,7 +120,7 @@ void loadFile(u16 *path){
 	HeapFree(heap,0,file);
 	HeapFree(heap,0,str);
 	HeapFree(heap,0,w);
-	CopyString(gpath,path);
+	wcscpy(gpath,path);
 	starred = 0;
 	updateTitle();
 }
@@ -212,14 +136,14 @@ void saveFile(u16 *path){
 	CloseHandle(hfile);
 	HeapFree(heap,0,buf);
 	HeapFree(heap,0,m);
-	CopyString(gpath,path);
+	wcscpy(gpath,path);
 	starred = 0;
 	updateTitle();
 }
 i32 controlStyler(HWND wnd, LPARAM lparam){
 	u16 className[32];
 	GetClassNameW(wnd,className,COUNT(className));
-	if (StringsEqualWide(className,L"Button")) (GetWindowLongPtrW(wnd,GWL_STYLE) & BS_TYPEMASK) == BS_AUTOCHECKBOX ? SetWindowTheme(wnd,L"fake",L"fake") : SetWindowTheme(wnd,L"DarkMode_Explorer",0); //npp subclasses autocheckbox and draws it manually, but here we just set its theme to a nonexistent theme, reverting it to windows 2000 style which for some reason responds to SetTextColor. Looks decent enough for my purposes.
+	if (!wcscmp(className,L"Button")) (GetWindowLongPtrW(wnd,GWL_STYLE) & BS_TYPEMASK) == BS_AUTOCHECKBOX ? SetWindowTheme(wnd,L"fake",L"fake") : SetWindowTheme(wnd,L"DarkMode_Explorer",0); //npp subclasses autocheckbox and draws it manually, but here we just set its theme to a nonexistent theme, reverting it to windows 2000 style which for some reason responds to SetTextColor. Looks decent enough for my purposes.
 	return 1;
 }
 i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
@@ -412,6 +336,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			RegCloseKey(key);
 			AppendMenuW(Format,MF_STRING|(wordwrap ? MF_CHECKED : 0),AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
 			AppendMenuW(Format,MF_STRING,AID_FONT,L"Font");
+			AppendMenuW(Format,MF_STRING,AID_COLORS,L"Colors");
 			AppendMenuW(View,MF_STRING,AID_ZOOM_IN,L"Zoom In\tCtrl+Plus");
 			AppendMenuW(View,MF_STRING,AID_ZOOM_OUT,L"Zoom Out\tCtrl+Minus");
 			AppendMenuW(View,MF_STRING,AID_RESET_ZOOM,L"Reset Zoom\tCtrl+0");
@@ -575,7 +500,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 WNDCLASSW wc = {0,WindowProc,0,0,0,0,0,0,0,L"DarkPad"};
 HTHEME(*OpenNcThemeData)(HWND wnd, LPCWSTR classList);
 HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
-	if (StringsEqualWide(classList,L"ScrollBar")){
+	if (!wcscmp(classList,L"ScrollBar")){
 		wnd = 0;
 		classList = L"Explorer::ScrollBar";
 	}
@@ -596,7 +521,7 @@ void WinMainCRTStartup(){
 	((void (*)())GetProcAddress(uxtheme,MAKEINTRESOURCEW(104)))();
 	u64 comctl = LoadLibraryExW(L"comctl32.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	PIMAGE_DELAYLOAD_DESCRIPTOR imports = comctl+((PIMAGE_NT_HEADERS)(comctl+((PIMAGE_DOS_HEADER)comctl)->e_lfanew))->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress;
-	while (!StringsEqualInsensitive(comctl+imports->DllNameRVA,"uxtheme.dll")) imports++;
+	while (_stricmp(comctl+imports->DllNameRVA,"uxtheme.dll")) imports++;
 	PIMAGE_THUNK_DATA impName = comctl+imports->ImportNameTableRVA;
 	PIMAGE_THUNK_DATA impAddr = comctl+imports->ImportAddressTableRVA;
 	while (!(IMAGE_SNAP_BY_ORDINAL(impName->u1.Ordinal) && IMAGE_ORDINAL(impName->u1.Ordinal)==49)){

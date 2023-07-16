@@ -8,8 +8,11 @@
 - link uninstall.exe in HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall (https://learn.microsoft.com/en-us/windows/win32/msi/configuring-add-remove-programs-with-windows-installer)
 - put shortcut in %appdata%\Microsoft\Windows\Start Menu\Programs (https://gist.github.com/abel0b/0b740648d6370e3e77fd70a816a34523) or maybe (https://learn.microsoft.com/en-us/windows/win32/shell/how-to-add-shortcuts-to-the-start-menu)
 */
+#define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
 int _fltused;
+#include <stdio.h>
+#include <string.h>
 #include <windows.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -31,30 +34,9 @@ typedef signed long long i64;
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define COUNT(arr) (sizeof(arr)/sizeof(*arr))
 #define FOR(var,count) for(i32 var = 0; var < (count); var++)
-void *memset(u8 *dst, int c, size_t size){
-	while (size--) *dst++ = c;
-	return dst;
-}
-void *memcpy(u8 *dst, u8 *src, size_t size){
-	while (size--) *dst++ = *src++;
-	return dst;
-}
 u16 *EndOf(u16 *s){
 	while (*s) s++;
 	return s;
-}
-u16 *CopyString(u16 *dst, u16 *src){
-	while (*src) *dst++ = *src++;
-	*dst = 0;
-	return dst;
-}
-i64 StringLength(u16 *s){
-	i64 n = 0;
-	while (*s){
-		n++;
-		s++;
-	}
-	return n;
 }
 #define CONSOLE 1
 #if CONSOLE
@@ -77,15 +59,15 @@ void WinMainCRTStartup(){
 
 	u16 *prgs;
     SHGetKnownFolderPath(&FOLDERID_Programs,0,0,&prgs);
-	CopyString(CopyString(path,prgs),L"\\DarkPad.lnk");
+	_snwprintf(path,COUNT(path),L"%s%s",prgs,L"\\DarkPad.lnk");
 	DeleteFileW(path);
 
 	RegDeleteKeyW(HKEY_CURRENT_USER,L"software\\darkpad");
 	RegDeleteKeyW(HKEY_CURRENT_USER,L"software\\microsoft\\windows\\currentversion\\uninstall\\darkpad");
 
-	CopyString(path,L"/c cd .. & rmdir /s /q ");
+	wcscpy(path,L"/c cd .. & rmdir /s /q ");
 	SHGetSpecialFolderPathW(0,EndOf(path),CSIDL_LOCAL_APPDATA,0);
-	CopyString(CopyString(EndOf(path),L"\\darkpad"),L" >> NUL");
+	wcscat(path,L"\\darkpad >> NUL");
 	u16 cmdPath[MAX_PATH];
 	GetEnvironmentVariableW(L"ComSpec",cmdPath,MAX_PATH);
     ShellExecuteW(0,0,cmdPath,path,0,SW_HIDE);
