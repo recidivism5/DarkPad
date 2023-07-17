@@ -29,13 +29,7 @@ HANDLE heap;
 #define abs(x) ((x)<0 ? -(x) : (x))
 #define malloc(size) HeapAlloc(heap,0,(size))
 #define realloc(ptr,size) HeapReAlloc(heap,0,(ptr),(size))
-#define CONSOLE 1
-#if CONSOLE
-HANDLE consoleOut;
-#define print(str) WriteConsoleW(consoleOut,str,wcslen(str),0,0); WriteConsoleW(consoleOut,L"\r\n",2,0,0);
-#else
-#define print(str)
-#endif
+
 i32 dpi;
 i32 dpiScale(i32 val){
     return (i32)((float)val * dpi / 96);
@@ -148,7 +142,7 @@ i32 controlStyler(HWND wnd, LPARAM lparam){
 }
 i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
-		case WM_INITDIALOG:
+		case WM_INITDIALOG:{
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
 			EnumChildWindows(wnd,controlStyler,0);
@@ -158,11 +152,9 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			DWORD v,vsize = sizeof(v);
 			RegQueryValueExW(key,L"matchcase",0,0,&v,&vsize);
 			SendMessageW(GetDlgItem(wnd,RID_FIND_CASE),BM_SETCHECK,v ? BST_CHECKED : BST_UNCHECKED,0);
-			vsize = sizeof(v);
-			RegQueryValueExW(key,L"matchwholeword",0,0,&v,&vsize);
-			SendMessageW(GetDlgItem(wnd,RID_FIND_WHOLE),BM_SETCHECK,v ? BST_CHECKED : BST_UNCHECKED,0);
 			RegCloseKey(key);
 			return 0;
+		}
 		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN:
 			SetBkMode(wparam,TRANSPARENT);
 			SetTextColor(wparam,RGB(255,255,255));
@@ -174,19 +166,9 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 		case WM_COMMAND:{
 			switch (LOWORD(wparam)){
 				case RID_FIND_WHAT:
-					print(L"Find what");
 					break;
 				case RID_FIND_WITH:
-					print(L"Find with");
 					break;
-				case RID_FIND_WHOLE:{
-					HKEY key;
-					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
-					DWORD v = SendMessageW(lparam,BM_GETCHECK,0,0)==BST_CHECKED ? 1 : 0;
-					RegSetValueExW(key,L"matchwholeword",0,REG_DWORD,&v,sizeof(v));
-					RegCloseKey(key);
-					break;
-				}
 				case RID_FIND_CASE:{
 					HKEY key;
 					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
@@ -195,61 +177,117 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					RegCloseKey(key);
 					break;
 				}
-				case RID_FIND_REPLACE: case RID_FIND_UP: case RID_FIND_DOWN:{
-					i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
-					u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
-					len = SendMessageW(gedit,WM_GETTEXT,len,buf);
-					HWND what = GetDlgItem(wnd,RID_FIND_WHAT);
-					i64 whatlen = SendMessageW(what,WM_GETTEXTLENGTH,0,0) + 1;
-					u16 *whatbuf = HeapAlloc(heap,0,whatlen*sizeof(u16));
-					whatlen = SendMessageW(what,WM_GETTEXT,whatlen,whatbuf);
-					HWND with = GetDlgItem(wnd,RID_FIND_WITH);
-					i64 withlen = SendMessageW(with,WM_GETTEXTLENGTH,0,0) + 1;
-					u16 *withbuf = HeapAlloc(heap,0,withlen*sizeof(u16));
-					withlen = SendMessageW(with,WM_GETTEXT,withlen,withbuf);
-					DWORD starti,endi;
-					SendMessageW(gedit,EM_GETSEL,&starti,&endi);
-					if (LOWORD(wparam)==RID_FIND_UP){
-						u16 *s = buf+starti;
-						do {
-							if (s < buf) s = buf+len-1;
-							if (*s == whatbuf[whatlen-1] && (s-buf+1) >= whatlen && s[1-whatlen]==whatbuf[0]){
-								for (i32 i = -1; i > 1-whatlen; i--){
-									if (s[i]!=whatbuf[(whatlen-1)+i]) goto NO_MATCH_UP;
-								}
-								SendMessageW(gedit,EM_SETSEL,s-whatlen+1-buf,s+1-buf);
-								break;
-								NO_MATCH_UP:;
-							}
-							s--;
-						} while (s != buf+starti);
-					} else {
-						u32 s = starti;
-						do {
-							if (s == len) s = 0;
-							if (buf[s] == whatbuf[0] && len-s >= whatlen && buf[s+whatlen-1]==whatbuf[whatlen-1]){
-								for (i32 i = 1; i < whatlen-1; i++){
-									if (buf[s+i]!=whatbuf[i]) goto NO_MATCH;
-								}
-								if (s != starti || (endi-starti)!=whatlen){
-									SendMessageW(gedit,EM_SETSEL,s,s+whatlen);
+				case RID_FIND_UP: case RID_FIND_DOWN: case RID_REPLACE: case RID_REPLACE_ALL:{
+					HWND hwhat = GetDlgItem(wnd,RID_FIND_WHAT);
+					i64 whatlen = SendMessageW(hwhat,WM_GETTEXTLENGTH,0,0) + 1;
+					if (whatlen == 1) break;
+					u16 *what = HeapAlloc(heap,0,whatlen*sizeof(u16));
+					whatlen = SendMessageW(hwhat,WM_GETTEXT,whatlen,what);
+
+					HWND hwith = GetDlgItem(wnd,RID_FIND_WITH);
+					i64 withlen = SendMessageW(hwith,WM_GETTEXTLENGTH,0,0) + 1;
+					u16 *with = HeapAlloc(heap,0,withlen*sizeof(u16));
+					withlen = SendMessageW(hwith,WM_GETTEXT,withlen,with);
+
+					i64 total = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
+					u16 *text = HeapAlloc(heap,0,total*sizeof(u16));
+					i64 textlen = SendMessageW(gedit,WM_GETTEXT,total,text);
+
+					i32 (*cmp)(u16 *s1, u16 *s2, size_t maxCount) = SendMessageW(GetDlgItem(wnd,RID_FIND_CASE),BM_GETCHECK,0,0)==BST_CHECKED ? wcsncmp : _wcsnicmp;
+
+					switch (LOWORD(wparam)){
+						case RID_FIND_UP:{
+							DWORD starti,endi;
+							SendMessageW(gedit,EM_GETSEL,&starti,&endi);
+							u16 *start = text+starti,
+							*s = start,
+							*pe = text+whatlen-1;
+							do {
+								if (!cmp(s,what+whatlen-1,1) && !cmp(s-whatlen+1,what,1) && !cmp(s-whatlen+2,what+1,MAX(0,whatlen-2))){
+									SendMessageW(gedit,EM_SETSEL,s-whatlen+1-text,s+1-text);
 									break;
-								} else if (LOWORD(wparam)==RID_FIND_REPLACE){
-									SendMessageW(gedit,EM_REPLACESEL,1,withbuf);
 								}
-								NO_MATCH:;
+								s--;
+								if (s < pe) s = text+textlen-1;
+							} while (s != start);
+							break;
+						}
+						case RID_FIND_DOWN:{
+							DWORD starti,endi;
+							SendMessageW(gedit,EM_GETSEL,&starti,&endi);
+							u16 *start = text+starti,
+							*s = start,
+							*pe = text+textlen-whatlen;
+							do {
+								if ((s!=start || endi-starti!=whatlen) && !cmp(s,what,1) && !cmp(s+whatlen-1,what+whatlen-1,1) && !cmp(s+1,what+1,MAX(0,whatlen-2))){
+									SendMessageW(gedit,EM_SETSEL,s-text,s-text+whatlen);
+									break;
+								}
+								s++;
+								if (s > pe) s = text;
+							} while (s != start);
+							break;
+						}
+						case RID_REPLACE:{
+							DWORD starti,endi;
+							SendMessageW(gedit,EM_GETSEL,&starti,&endi);
+							u16 *start = text+starti,
+							*s = start,
+							*pe = text+textlen-whatlen;
+							i64 dif = 0;
+							do {
+								if (!cmp(s,what,1) && !cmp(s+whatlen-1,what+whatlen-1,1) && !cmp(s+1,what+1,MAX(0,whatlen-2))){
+									if (s==start){
+										SendMessageW(gedit,EM_REPLACESEL,1,with);
+										s += withlen;
+										dif = withlen-whatlen;
+									} else {
+										SendMessageW(gedit,EM_SETSEL,s-text+dif,s-text+dif+whatlen);
+										break;
+									}
+								}
+								s++;
+								if (s > pe) s = text;
+							} while (s != start);
+							break;
+						}
+						case RID_REPLACE_ALL:{
+							u16 *start = text,
+							*s = start,
+							*pe = text+textlen-whatlen;
+							i32 replace = 0;
+							do {
+								START:
+								if (!cmp(s,what,1) && !cmp(s+whatlen-1,what+whatlen-1,1) && !cmp(s+1,what+1,MAX(0,whatlen-2))){
+									if (textlen+withlen-whatlen > total-1){
+										while (textlen+withlen-whatlen > total-1) total *= 2;
+										text = HeapReAlloc(heap,0,text,total*sizeof(u16));
+									}
+									memmove(s+withlen,s+whatlen,(text+textlen-(s+whatlen))*sizeof(u16));
+									memcpy(s,with,withlen*sizeof(u16));
+									textlen += withlen-whatlen;
+									pe = text+textlen-whatlen;
+									s += withlen;
+									replace = 1;
+									if (s > pe) break;
+									goto START;
+								}
+								s++;
+								if (s > pe) s = text;
+							} while (s != start);
+							if (replace){
+								text[textlen] = 0;
+								SendMessageW(gedit,WM_SETTEXT,0,text);
 							}
-							s++;
-						} while(s != starti);
+							break;
+						}
 					}
-					HeapFree(heap,0,buf);
-					HeapFree(heap,0,whatbuf);
-					HeapFree(heap,0,withbuf);
+
+					HeapFree(heap,0,what);
+					HeapFree(heap,0,with);
+					HeapFree(heap,0,text);
 					break;
 				}
-				case RID_FIND_REPLACE_ALL:
-					print(L"Replace All");
-					break;
 				case IDCANCEL: 
                     EndDialog(wnd,wparam); 
                     return TRUE;
@@ -506,14 +544,10 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	}
 	return OpenNcThemeData(wnd,classList);
 }
-void WinMainCRTStartup(){
+void mainCRTStartup(){
 	instance = GetModuleHandleW(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-#if CONSOLE
-	AllocConsole();
-	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
-#endif
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
 	OpenNcThemeData = GetProcAddress(uxtheme,MAKEINTRESOURCEW(49));

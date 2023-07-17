@@ -6,5 +6,5 @@
 #define RID_FIND_CASE 74
 #define RID_FIND_UP 75
 #define RID_FIND_DOWN 76
-#define RID_FIND_REPLACE 77
-#define RID_FIND_REPLACE_ALL 78
+#define RID_REPLACE 77
+#define RID_REPLACE_ALL 78
