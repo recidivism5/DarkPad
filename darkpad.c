@@ -252,16 +252,17 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 							break;
 						}
 						case RID_REPLACE_ALL:{
-							u16 *start = text,
-							*s = start,
+							u16 *s = text,
 							*pe = text+textlen-whatlen;
 							i32 replace = 0;
 							do {
 								START:
 								if (!cmp(s,what,1) && !cmp(s+whatlen-1,what+whatlen-1,1) && !cmp(s+1,what+1,MAX(0,whatlen-2))){
 									if (textlen+withlen-whatlen > total-1){
-										while (textlen+withlen-whatlen > total-1) total *= 2;
+										while (textlen+withlen-whatlen > total-1) total += 4096;
+										i64 d = s-text;
 										text = HeapReAlloc(heap,0,text,total*sizeof(u16));
+										s = text+d;
 									}
 									memmove(s+withlen,s+whatlen,(text+textlen-(s+whatlen))*sizeof(u16));
 									memcpy(s,with,withlen*sizeof(u16));
@@ -274,7 +275,7 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 								}
 								s++;
 								if (s > pe) s = text;
-							} while (s != start);
+							} while (s != text);
 							if (replace){
 								text[textlen] = 0;
 								SendMessageW(gedit,WM_SETTEXT,0,text);
