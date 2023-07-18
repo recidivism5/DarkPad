@@ -1,3 +1,18 @@
+/*
+Bugs:
+Menu item widths get fucked if you change your monitor scale while the app is running. I think this is because menufont doesn't get updated on dpi change.
+Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
+Need to subclass ComboBox and GroupBox to make them darkmode.
+Need to change font size on dpi change.
+Ctrl+Backspace doesn't work.
+I don't think Ctrl+Z works. Make sure it works for Replace All.
+Replace/Replace All don't affect starred.
+Colors is not implemented.
+matchwholeword needs to be removed from the installer and uninstaller.
+Want short title on top bar, full title on bottom bar.
+That annoying line underneath the menu bar still appears during certain actions.
+Menu bar and bottom bar need outlines.
+*/
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
 int _fltused;
@@ -134,7 +149,7 @@ void saveFile(u16 *path){
 	starred = 0;
 	updateTitle();
 }
-i32 controlStyler(HWND wnd, LPARAM lparam){
+i32 controlThemer(HWND wnd, LPARAM lparam){
 	u16 className[32];
 	GetClassNameW(wnd,className,COUNT(className));
 	if (!wcscmp(className,L"Button")) (GetWindowLongPtrW(wnd,GWL_STYLE) & BS_TYPEMASK) == BS_AUTOCHECKBOX ? SetWindowTheme(wnd,L"fake",L"fake") : SetWindowTheme(wnd,L"DarkMode_Explorer",0); //npp subclasses autocheckbox and draws it manually, but here we just set its theme to a nonexistent theme, reverting it to windows 2000 style which for some reason responds to SetTextColor. Looks decent enough for my purposes.
@@ -145,7 +160,7 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 		case WM_INITDIALOG:{
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
-			EnumChildWindows(wnd,controlStyler,0);
+			EnumChildWindows(wnd,controlThemer,0);
 
 			HKEY key;
 			RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
@@ -297,7 +312,24 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	}
 	return 0;
 }
+UINT_PTR FontProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
+	switch (msg){
+		case WM_INITDIALOG:{
+			i32 t = 1;
+			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
+			EnumChildWindows(wnd,controlThemer,0);
+			break;
+		}
+		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN: case WM_CTLCOLOREDIT:
+			SetBkMode(wparam,TRANSPARENT);
+			SetTextColor(wparam,RGB(255,255,255));
+			return bBackground;
+	}
+	return 0;
+}
 HMENU Format;
+i32 initialDpi;
+i32 initialMenuFontHeight;
 i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_NCPAINT:
@@ -316,6 +348,16 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			FillRect(hdc,&r,bMenuBackground);
 			ReleaseDC(wnd,hdc);
 			return result;
+		}
+		case WM_DPICHANGED:{
+			i32 newdpi = LOWORD(wparam);
+			NONCLIENTMETRICSW ncm = {sizeof(NONCLIENTMETRICSW)};
+			SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSW),&ncm,0);
+			if (menufont) DeleteObject(menufont);
+			// -18/150 = x/newdpi
+			ncm.lfMenuFont.lfHeight = (double)ncm.lfMenuFont.lfHeight * (double)newdpi / (double)initialDpi;
+			menufont = CreateFontIndirectW(&ncm.lfMenuFont);
+			return 0;
 		}
 		case WM_MEASUREITEM:{
 			MEASUREITEMSTRUCT *mip = lparam;
@@ -349,6 +391,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 		}
 		case WM_CREATE:{
 			gwnd = wnd;
+			initialDpi = GetDpiForWindow(wnd);
 			updateTitle();
 			HMENU Bar = CreateMenu();
 			HMENU File = CreateMenu();
@@ -396,6 +439,8 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL|(wordwrap ? 0 : (WS_HSCROLL|ES_AUTOHSCROLL)),0,0,0,0,wnd,0,instance,0);
 			SendMessageW(gedit,WM_SETFONT,font,0);
 			SendMessageW(gedit,EM_SETLIMITTEXT,UINT_MAX,0);
+			UINT tabstops = 16;
+			SendMessageW(gedit,EM_SETTABSTOPS,1,&tabstops);
 			break;
 		}
         case WM_SIZE:{
@@ -479,7 +524,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 				}
 				case AID_FONT:{
 					LOGFONTW lf;
-					CHOOSEFONTW cf = {sizeof(CHOOSEFONTW),wnd,0,&lf,0,0,0,0,0,0,0,0,0,0,0,0};
+					CHOOSEFONTW cf = {sizeof(CHOOSEFONTW),wnd,0,&lf,0,CF_ENABLEHOOK,0,0,FontProc,0,0,0,0,0,0,0};
 					if (!ChooseFontW(&cf)) break;
 					DeleteObject(font);
 					font = CreateFontIndirectW(&lf);
@@ -512,6 +557,8 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					HWND newedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL|(v ? 0 : (WS_HSCROLL|ES_AUTOHSCROLL)),0,0,0,0,wnd,0,instance,0);
 					SendMessageW(newedit,WM_SETFONT,font,0);
 					SendMessageW(newedit,EM_SETLIMITTEXT,UINT_MAX,0);
+					UINT tabstops = 16;
+					SendMessageW(newedit,EM_SETTABSTOPS,1,&tabstops);
 					HLOCAL eh = SendMessageW(gedit,EM_GETHANDLE,0,0);
 					SendMessageW(newedit,WM_SETTEXT,0,LocalLock(eh));
 					LocalUnlock(eh);
@@ -570,6 +617,7 @@ void mainCRTStartup(){
 
 	NONCLIENTMETRICSW ncm = {sizeof(NONCLIENTMETRICSW)};
 	SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSW),&ncm,0);
+	initialMenuFontHeight = ncm.lfMenuFont.lfHeight;
 	menufont = CreateFontIndirectW(&ncm.lfMenuFont);
 	bBackground = CreateSolidBrush(RGB(20,20,20));
 	bMenuBackground = CreateSolidBrush(RGB(40,40,40));
