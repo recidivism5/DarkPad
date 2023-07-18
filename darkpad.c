@@ -3,15 +3,13 @@ Bugs:
 Move the menu and accelerators into res.rc
 Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
 Need to subclass ComboBox and GroupBox to make them darkmode.
-*Need to change font size on dpi change. (not gonna do this one because it makes the window lag out when dragging a large file between monitors)
 Ctrl+Backspace doesn't work.
 I don't think Ctrl+Z works. Make sure it works for Replace All.
 Replace/Replace All don't affect starred.
 Colors is not implemented.
 matchwholeword needs to be removed from the installer and uninstaller.
-Want short title on top bar, full title on bottom bar.
 That annoying line underneath the menu bar still appears during certain actions.
-Menu bar and bottom bar need outlines.
+Menu bar line should be the window outline color
 */
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
@@ -549,7 +547,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					gedit = newedit;
 					RECT r;
 					GetClientRect(wnd,&r);
-					MoveWindow(gedit,0,0,r.right,r.bottom-22,1);
+					MoveWindow(gedit,0,0,r.right,r.bottom,1);
 					RegSetValueExW(key,L"wordwrap",0,REG_DWORD,&v,sizeof(v));
 					RegCloseKey(key);
 					SetMenuItemInfoW(Format,AID_WORD_WRAP,0,&mii);
