@@ -1,9 +1,9 @@
 /*
 Bugs:
-Menu item widths get fucked if you change your monitor scale while the app is running. I think this is because menufont doesn't get updated on dpi change.
+Move the menu and accelerators into res.rc
 Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
 Need to subclass ComboBox and GroupBox to make them darkmode.
-Need to change font size on dpi change.
+*Need to change font size on dpi change. (not gonna do this one because it makes the window lag out when dragging a large file between monitors)
 Ctrl+Backspace doesn't work.
 I don't think Ctrl+Z works. Make sure it works for Replace All.
 Replace/Replace All don't affect starred.
@@ -442,12 +442,9 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SendMessageW(gedit,EM_SETTABSTOPS,1,&tabstops);
 			break;
 		}
-        case WM_SIZE:{
-            MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam)-22,1);
-			RECT r = {0,HIWORD(lparam)-22,LOWORD(lparam),HIWORD(lparam)};
-			InvalidateRect(wnd,&r,0);
+        case WM_SIZE:
+            MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam),1);
             return 0;
-		}
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			return 0;
@@ -455,19 +452,6 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SetTextColor(wparam,0xcccccc);
 			SetBkColor(wparam,RGB(20,20,20));
 			return bBackground;
-		case WM_PAINT:{
-			PAINTSTRUCT ps;
-			HDC hdc = BeginPaint(wnd,&ps);
-			SelectObject(hdc,menufont);
-			SetBkMode(hdc,TRANSPARENT);
-			SetTextColor(hdc,RGB(255,255,255));
-			RECT r;
-			GetClientRect(wnd,&r);
-			r.top = r.bottom-22;
-			FillRect(hdc,&r,bMenuBackground);
-			EndPaint(wnd,&ps);
-			return 0;
-		}
 		case WM_COMMAND:
 			if (!starred && HIWORD(wparam)==EN_CHANGE){
 				starred = 1;
