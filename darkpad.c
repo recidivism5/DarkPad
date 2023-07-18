@@ -21,6 +21,7 @@ int _fltused;
 #include <uxtheme.h>
 #include <vssym32.h>
 #include <shellapi.h>
+#include <shlobj_core.h>
 #include <shobjidl_core.h>
 #include <shlguid.h>
 #include <commdlg.h>
@@ -76,6 +77,7 @@ enum{
 };
 ACCEL accels[]={
     FCONTROL|FVIRTKEY,'N',AID_NEW,
+	FCONTROL|FSHIFT|FVIRTKEY,'N',AID_NEW_WINDOW,
     FCONTROL|FVIRTKEY,'O',AID_OPEN,
     FCONTROL|FVIRTKEY,'S',AID_SAVE,
     FCONTROL|FSHIFT|FVIRTKEY,'S',AID_SAVE_AS,
@@ -466,6 +468,13 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					updateTitle();
 					break;
 				}
+				case AID_NEW_WINDOW:{
+					u16 p[MAX_PATH];
+					SHGetSpecialFolderPathW(0,p,CSIDL_LOCAL_APPDATA,0);
+					wcscat(p,L"\\darkpad\\darkpad.exe");
+					ShellExecuteW(wnd,0,p,0,0,SW_SHOW);
+					break;
+				}
                 case AID_OPEN:{
 					IFileDialog *pfd;
 					IShellItem *psi;
@@ -610,7 +619,7 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	}
 	return OpenNcThemeData(wnd,classList);
 }
-void mainCRTStartup(){
+void WinMainCRTStartup(){
 	instance = GetModuleHandleW(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
