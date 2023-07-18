@@ -1,6 +1,5 @@
 /*
 Bugs:
-Move the menu and accelerators into res.rc
 Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
 Need to subclass ComboBox and GroupBox to make them darkmode.
 Ctrl+Backspace doesn't work.
@@ -66,7 +65,6 @@ enum{
 	AID_DELETE,
 	AID_SELECT_ALL,
 	AID_FIND,
-	AID_REPLACE,
 	AID_WORD_WRAP,
 	AID_FONT,
 	AID_COLORS,
@@ -82,9 +80,7 @@ ACCEL accels[]={
     FCONTROL|FVIRTKEY,'S',AID_SAVE,
     FCONTROL|FSHIFT|FVIRTKEY,'S',AID_SAVE_AS,
     FCONTROL|FVIRTKEY,'F',AID_FIND,
-    //FCONTROL|FVIRTKEY,'G',AID_GO_TO_LINE,
     FCONTROL|FVIRTKEY,'A',AID_SELECT_ALL,
-    //FCONTROL|FVIRTKEY,'T',AID_INSERT_TIMESTAMP,
     FALT|FVIRTKEY,'Z',AID_WORD_WRAP,
 	FCONTROL|FVIRTKEY,VK_BACK,AID_DELETE_WORD_LEFT,
 };
@@ -510,6 +506,27 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					}
 					break;
 				}
+				case AID_UNDO:
+					SendMessageW(gedit,EM_UNDO,0,0);
+					break;
+				case AID_CUT:
+					SendMessageW(gedit,WM_CUT,0,0);
+					break;
+				case AID_COPY:
+					SendMessageW(gedit,WM_COPY,0,0);
+					break;
+				case AID_PASTE:
+					SendMessageW(gedit,WM_PASTE,0,0);
+					break;
+				case AID_DELETE:
+					SendKeydownMessage(gedit,VK_DELETE);
+					break;
+				case AID_FIND:
+					ShowWindow(CreateDialogParamW(0,MAKEINTRESOURCEW(RID_FIND),wnd,FindProc,0),SW_SHOW);
+					break;
+				case AID_SELECT_ALL:
+					SendMessageW(gedit,EM_SETSEL,0,-1);
+					break;
 				case AID_FONT:{
 					LOGFONTW lf;
 					CHOOSEFONTW cf = {sizeof(CHOOSEFONTW),wnd,0,&lf,0,CF_ENABLEHOOK,0,0,FontProc,0,0,0,0,0,0,0};
@@ -521,10 +538,6 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
 					RegSetValueExW(key,L"font",0,REG_BINARY,&lf,sizeof(lf));
 					RegCloseKey(key);
-					break;
-				}
-				case AID_FIND:{
-					ShowWindow(CreateDialogParamW(0,MAKEINTRESOURCEW(RID_FIND),wnd,FindProc,0),SW_SHOW);
 					break;
 				}
 				case AID_WORD_WRAP:{
