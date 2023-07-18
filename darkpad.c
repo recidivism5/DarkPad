@@ -4,12 +4,13 @@ Move the menu and accelerators into res.rc
 Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
 Need to subclass ComboBox and GroupBox to make them darkmode.
 Ctrl+Backspace doesn't work.
-I don't think Ctrl+Z works. Make sure it works for Replace All.
+Ctrl+Z for Replace All. Maybe you can select all and replacesel with the new text instead of settext.
 Replace/Replace All don't affect starred.
 Colors is not implemented.
 matchwholeword needs to be removed from the installer and uninstaller.
 That annoying line underneath the menu bar still appears during certain actions.
 Menu bar line should be the window outline color
+Honestly I want a bottom bar with just line,column and line ending. And have no zoom.
 */
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
@@ -73,6 +74,7 @@ enum{
 	AID_ZOOM_OUT,
 	AID_RESET_ZOOM,
 	AID_STATUS_BAR,
+	AID_DELETE_WORD_LEFT,
 };
 ACCEL accels[]={
     FCONTROL|FVIRTKEY,'N',AID_NEW,
@@ -84,6 +86,7 @@ ACCEL accels[]={
     FCONTROL|FVIRTKEY,'A',AID_SELECT_ALL,
     //FCONTROL|FVIRTKEY,'T',AID_INSERT_TIMESTAMP,
     FALT|FVIRTKEY,'Z',AID_WORD_WRAP,
+	FCONTROL|FVIRTKEY,VK_BACK,AID_DELETE_WORD_LEFT,
 };
 i32 starred;
 void updateTitle(){
@@ -328,6 +331,10 @@ UINT_PTR FontProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 HMENU Format;
 i32 initialDpi;
 i32 initialMenuFontHeight;
+void SendKeydownMessage(HWND wnd, UINT key){
+	MSG msg = {wnd,WM_KEYDOWN,key,1,0,0};
+	DispatchMessageW(&msg);
+}
 i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
 		case WM_NCPAINT:
@@ -553,8 +560,25 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					SetMenuItemInfoW(Format,AID_WORD_WRAP,0,&mii);
 					break;
 				}
-				case AID_ZOOM_IN:{
-					SendMessageW(gedit,EM_SETSEL,0,-1);
+				case AID_DELETE_WORD_LEFT:{
+					u32 starti,endi;
+					SendMessageW(gedit,EM_GETSEL,&starti,&endi);
+					if (endi-starti) SendKeydownMessage(gedit,VK_DELETE);
+					else if (starti){
+						u8 state[256];
+						GetKeyboardState(state);
+						i32 shiftDown = state[VK_SHIFT]>>7;
+						if (!shiftDown){
+							state[VK_SHIFT] = state[VK_LSHIFT] = 0b10000000;
+							SetKeyboardState(state);
+						}
+						SendKeydownMessage(gedit,VK_LEFT);
+						if (!shiftDown){
+							state[VK_SHIFT] = state[VK_LSHIFT] = 0;
+							SetKeyboardState(state);
+						}
+						SendKeydownMessage(gedit,VK_DELETE);
+					}
 					break;
 				}
                 default:
