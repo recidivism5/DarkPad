@@ -354,10 +354,9 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			NONCLIENTMETRICSW ncm = {sizeof(NONCLIENTMETRICSW)};
 			SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSW),&ncm,0);
 			if (menufont) DeleteObject(menufont);
-			// -18/150 = x/newdpi
 			ncm.lfMenuFont.lfHeight = (double)ncm.lfMenuFont.lfHeight * (double)newdpi / (double)initialDpi;
 			menufont = CreateFontIndirectW(&ncm.lfMenuFont);
-			return 0;
+			break;
 		}
 		case WM_MEASUREITEM:{
 			MEASUREITEMSTRUCT *mip = lparam;
