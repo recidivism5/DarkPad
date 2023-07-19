@@ -1,8 +1,8 @@
 /*
 Bugs:
+We need window scaling and font scaling for dpi changes.
 Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
 Need to subclass ComboBox and GroupBox to make them darkmode.
-Ctrl+Backspace doesn't work.
 Ctrl+Z for Replace All. Maybe you can select all and replacesel with the new text instead of settext.
 Replace/Replace All don't affect starred.
 Colors is not implemented.
@@ -17,6 +17,7 @@ int _fltused;
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
+#include <windowsx.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <vssym32.h>
@@ -49,8 +50,8 @@ i32 dpiScale(i32 val){
     return (i32)((float)val * dpi / 96);
 }
 HINSTANCE instance;
-HWND gwnd,gedit;
-HBRUSH bBackground,bMenuBackground,bOutline;
+HWND gwnd,gedit,glineending;
+HBRUSH bBackground,bMenuBackground,bMenuBackgroundHovered,bOutline;
 HFONT font,menufont;
 u16 gpath[MAX_PATH+4];
 enum{
@@ -68,11 +69,6 @@ enum{
 	AID_FIND,
 	AID_WORD_WRAP,
 	AID_FONT,
-	AID_COLORS,
-	AID_ZOOM_IN,
-	AID_ZOOM_OUT,
-	AID_RESET_ZOOM,
-	AID_STATUS_BAR,
 	AID_DELETE_WORD_LEFT,
 };
 ACCEL accels[]={
@@ -87,10 +83,27 @@ ACCEL accels[]={
 	FCONTROL|FVIRTKEY,VK_BACK,AID_DELETE_WORD_LEFT,
 };
 i32 starred;
+i32 lineending = 0;//0 = lf, 1 = crlf
+u16 *name(u16 *s){
+	u16 *lastslash = s;
+	while (*s){
+		if (*s == '\\') lastslash = s;
+		s++;
+	}
+	return lastslash+1;
+}
+#define BOTTOMBAR_HEIGHT 20
+void invalidateBottombar(){
+	RECT r;
+	GetClientRect(gwnd,&r);
+	r.top = r.bottom-dpiScale(BOTTOMBAR_HEIGHT);
+	InvalidateRect(gwnd,&r,0);
+}
 void updateTitle(){
 	u16 title[MAX_PATH+32];
-	_snwprintf(title,COUNT(title),L"%s%s - DarkPad",starred ? L"*" : L"",*gpath ? gpath : L"Untitled");
+	_snwprintf(title,COUNT(title),L"%s%s - DarkPad",starred ? L"*" : L"",*gpath ? name(gpath) : L"Untitled");
 	SetWindowTextW(gwnd,title);
+	invalidateBottombar();
 }
 void loadFile(u16 *path){
 	HANDLE hfile = CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
@@ -111,6 +124,7 @@ void loadFile(u16 *path){
 			str = HeapReAlloc(heap,0,str,total);
 		}
 		if (*f=='\r' || *f=='\n'){
+			if (!lineending && *f=='\r') lineending = 1;
 			str[used++] = '\r';
 			str[used++] = '\n';
 		} else str[used++] = *f;
@@ -120,6 +134,7 @@ void loadFile(u16 *path){
 		total++;
 		str = HeapReAlloc(heap,0,str,total);
 	}
+	InvalidateRect(glineending,0,0);
 	str[used++] = 0;
 	i32 wlen = MultiByteToWideChar(CP_UTF8,MB_PRECOMPOSED,str,used,0,0);
 	u16 *w = HeapAlloc(heap,0,wlen*sizeof(u16));
@@ -133,9 +148,21 @@ void loadFile(u16 *path){
 	updateTitle();
 }
 void saveFile(u16 *path){
-	i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0);
+	i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0)+1;
 	u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
 	len = SendMessageW(gedit,WM_GETTEXT,len,buf);
+	if (!lineending){
+		u16 *nbuf = HeapAlloc(heap,0,(len+1)*sizeof(u16));
+		u16 *n = nbuf, *b = buf;
+		while (*b){
+			if (*b != '\r') *n++ = *b;
+			b++;
+		}
+		*n = 0;
+		HeapFree(heap,0,buf);
+		buf = nbuf;
+		len = n-nbuf;
+	}
 	i32 mlen = WideCharToMultiByte(CP_UTF8,0,buf,len,0,0,0,0);
 	u8 *m = HeapAlloc(heap,0,mlen);
 	WideCharToMultiByte(CP_UTF8,0,buf,len,m,mlen,0,0);
@@ -292,7 +319,10 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 							} while (s != text);
 							if (replace){
 								text[textlen] = 0;
-								SendMessageW(gedit,WM_SETTEXT,0,text);
+								SendMessageW(gedit,EM_SETSEL,0,-1);
+								SendMessageW(gedit,EM_REPLACESEL,1,text);
+								SendMessageW(gedit,EM_SETSEL,0,0);
+								SendMessageW(gedit,EM_SCROLLCARET,0,0);
 							}
 							break;
 						}
@@ -319,7 +349,7 @@ UINT_PTR FontProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			EnumChildWindows(wnd,controlThemer,0);
 			break;
 		}
-		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN: case WM_CTLCOLOREDIT:
+		case WM_CTLCOLORDLG: case WM_CTLCOLORSTATIC:
 			SetBkMode(wparam,TRANSPARENT);
 			SetTextColor(wparam,RGB(255,255,255));
 			return bBackground;
@@ -332,6 +362,63 @@ i32 initialMenuFontHeight;
 void SendKeydownMessage(HWND wnd, UINT key){
 	MSG msg = {wnd,WM_KEYDOWN,key,1,0,0};
 	DispatchMessageW(&msg);
+}
+#define IDC_OWNERDRAW_BUTTON 269
+i32 lehovered = 0;
+LRESULT CALLBACK OwnerDrawButtonProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData){
+    switch (uMsg){
+		case WM_LBUTTONDOWN:{ //as for why the fuck this only occasionally gets triggered, I don't know.
+			lineending = !lineending;
+			starred = 1;
+			updateTitle();
+			InvalidateRect(hWnd,0,0);
+			break;
+		}
+		case WM_MOUSEMOVE:{
+			TRACKMOUSEEVENT ev = {0};
+			ev.cbSize = sizeof(TRACKMOUSEEVENT);
+			ev.dwFlags = TME_HOVER | TME_LEAVE;
+			ev.hwndTrack = hWnd;
+			ev.dwHoverTime = HOVER_DEFAULT;
+			TrackMouseEvent(&ev);
+			if (!lehovered){
+				lehovered = 1;
+				InvalidateRect(hWnd,0,0);
+			}
+			break;
+		}
+		case WM_MOUSELEAVE:{
+			TRACKMOUSEEVENT ev = {0};
+			ev.cbSize = sizeof(TRACKMOUSEEVENT);
+			ev.dwFlags = TME_HOVER | TME_LEAVE | TME_CANCEL;
+			ev.hwndTrack = hWnd;
+			ev.dwHoverTime = HOVER_DEFAULT;
+			TrackMouseEvent(&ev);
+			lehovered = 0;
+			InvalidateRect(hWnd,0,0);
+			break;
+		}
+		case WM_PAINT:{
+			RECT rc;
+			PAINTSTRUCT ps;
+			HDC hdc = BeginPaint(hWnd, &ps);
+			RECT r;
+			GetClientRect(hWnd,&r);
+			FillRect(hdc,&r,lehovered ? bMenuBackgroundHovered : bMenuBackground);
+			SelectObject(hdc,menufont);
+			SetBkMode(hdc,TRANSPARENT);
+			SetTextColor(hdc,RGB(255,255,255));
+			RECT tr = r;
+			tr.top += dpiScale(1);
+			DrawTextW(hdc,lineending ? L"CRLF" : L"LF",-1,&tr,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
+			EndPaint(hWnd, &ps);
+			break;
+		}
+		case WM_NCDESTROY:
+			RemoveWindowSubclass(hWnd, &OwnerDrawButtonProc, 1);
+			break;
+    }
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 }
 i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 	switch (msg){
@@ -353,11 +440,11 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			return result;
 		}
 		case WM_DPICHANGED:{
-			i32 newdpi = LOWORD(wparam);
+			dpi = LOWORD(wparam);
 			NONCLIENTMETRICSW ncm = {sizeof(NONCLIENTMETRICSW)};
 			SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(NONCLIENTMETRICSW),&ncm,0);
 			if (menufont) DeleteObject(menufont);
-			ncm.lfMenuFont.lfHeight = (double)ncm.lfMenuFont.lfHeight * (double)newdpi / (double)initialDpi;
+			ncm.lfMenuFont.lfHeight = (double)ncm.lfMenuFont.lfHeight * (double)dpi / (double)initialDpi;
 			menufont = CreateFontIndirectW(&ncm.lfMenuFont);
 			break;
 		}
@@ -365,7 +452,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			MEASUREITEMSTRUCT *mip = lparam;
 			HDC hdc = GetDC(wnd);
 			SelectObject(hdc,menufont);
-			RECT r;
+			RECT r = {0};
 			DrawTextW(hdc,mip->itemData,-1,&r,DT_LEFT|DT_SINGLELINE|DT_CALCRECT);
 			ReleaseDC(wnd,hdc);
 			mip->itemWidth = r.right-r.left;
@@ -393,13 +480,13 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 		}
 		case WM_CREATE:{
 			gwnd = wnd;
-			initialDpi = GetDpiForWindow(wnd);
+			dpi = GetDpiForWindow(wnd);
+			initialDpi = dpi;
 			updateTitle();
 			HMENU Bar = CreateMenu();
 			HMENU File = CreateMenu();
 			HMENU Edit = CreateMenu();
 			Format = CreateMenu();
-			HMENU View = CreateMenu();
 			AppendMenuW(File,MF_STRING,AID_NEW,L"New\tCtrl+N");
 			AppendMenuW(File,MF_STRING,AID_NEW_WINDOW,L"New Window\tCtrl+Shift+N");
 			AppendMenuW(File,MF_STRING,AID_OPEN,L"Open\tCtrl+O");
@@ -420,16 +507,9 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			RegCloseKey(key);
 			AppendMenuW(Format,MF_STRING|(wordwrap ? MF_CHECKED : 0),AID_WORD_WRAP,L"Word Wrap\tAlt+Z");
 			AppendMenuW(Format,MF_STRING,AID_FONT,L"Font");
-			AppendMenuW(Format,MF_STRING,AID_COLORS,L"Colors");
-			AppendMenuW(View,MF_STRING,AID_ZOOM_IN,L"Zoom In\tCtrl+Plus");
-			AppendMenuW(View,MF_STRING,AID_ZOOM_OUT,L"Zoom Out\tCtrl+Minus");
-			AppendMenuW(View,MF_STRING,AID_RESET_ZOOM,L"Reset Zoom\tCtrl+0");
-			AppendMenuW(View,MF_SEPARATOR,0,0);
-			AppendMenuW(View,MF_STRING,AID_STATUS_BAR,L"Status Bar");
 			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,File,L"File");
 			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,Edit,L"Edit");
 			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,Format,L"Format");
-			AppendMenuW(Bar,MF_OWNERDRAW|MF_POPUP,View,L"View");
 			MENUINFO menuinfo = {0};
 			menuinfo.cbSize = sizeof(MENUINFO);
 			menuinfo.fMask = MIM_BACKGROUND;
@@ -439,6 +519,8 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			i32 t = 1;
 			DwmSetWindowAttribute(wnd,20,&t,sizeof(t));
 			gedit = CreateWindowExW(0,L"EDIT",0,WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_LEFT|ES_MULTILINE|ES_AUTOVSCROLL|ES_NOHIDESEL|(wordwrap ? 0 : (WS_HSCROLL|ES_AUTOHSCROLL)),0,0,0,0,wnd,0,instance,0);
+			glineending = CreateWindowW(L"Button",L"CRLF",WS_VISIBLE|WS_CHILD|BS_OWNERDRAW,0,0,0,0,wnd,IDC_OWNERDRAW_BUTTON,instance,0);
+			SetWindowSubclass(glineending,OwnerDrawButtonProc,IDC_OWNERDRAW_BUTTON,0);
 			SendMessageW(gedit,WM_SETFONT,font,0);
 			SendMessageW(gedit,EM_SETLIMITTEXT,UINT_MAX,0);
 			UINT tabstops = 16;
@@ -446,8 +528,32 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			break;
 		}
         case WM_SIZE:
-            MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam),1);
+            MoveWindow(gedit,0,0,LOWORD(lparam),HIWORD(lparam)-dpiScale(BOTTOMBAR_HEIGHT),1);
+			MoveWindow(glineending,LOWORD(lparam)-dpiScale(17+47),HIWORD(lparam)-dpiScale(BOTTOMBAR_HEIGHT),dpiScale(47),dpiScale(BOTTOMBAR_HEIGHT),1);
+			invalidateBottombar();
             return 0;
+		case WM_PAINT:{
+			PAINTSTRUCT ps;
+			HDC hdc = BeginPaint(wnd,&ps);
+			RECT r;
+			GetClientRect(wnd,&r);
+			r.top = r.bottom-dpiScale(BOTTOMBAR_HEIGHT);
+			FillRect(hdc,&r,bMenuBackground);
+			SelectObject(hdc,menufont);
+			SetBkMode(hdc,TRANSPARENT);
+			SetTextColor(hdc,RGB(255,255,255));
+			RECT pathrect = r;
+			pathrect.left += dpiScale(6);
+			pathrect.top += dpiScale(1);
+			DrawTextW(hdc,*gpath ? gpath : L"Untitled",-1,&pathrect,DT_SINGLELINE|DT_LEFT|DT_VCENTER);
+			RECT csrect = r;
+			csrect.right -= dpiScale(17+47);
+			csrect.left = csrect.right - dpiScale(47);
+			csrect.top += dpiScale(1);
+			DrawTextW(hdc,L"UTF-8",-1,&csrect,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
+			EndPaint(wnd,&ps);
+			return 0;
+		}
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			return 0;
@@ -576,7 +682,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					gedit = newedit;
 					RECT r;
 					GetClientRect(wnd,&r);
-					MoveWindow(gedit,0,0,r.right,r.bottom,1);
+					MoveWindow(gedit,0,0,r.right,r.bottom-dpiScale(BOTTOMBAR_HEIGHT),1);
 					RegSetValueExW(key,L"wordwrap",0,REG_DWORD,&v,sizeof(v));
 					RegCloseKey(key);
 					SetMenuItemInfoW(Format,AID_WORD_WRAP,0,&mii);
@@ -619,7 +725,7 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	}
 	return OpenNcThemeData(wnd,classList);
 }
-void WinMainCRTStartup(){
+void mainCRTStartup(){
 	instance = GetModuleHandleW(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -648,6 +754,7 @@ void WinMainCRTStartup(){
 	menufont = CreateFontIndirectW(&ncm.lfMenuFont);
 	bBackground = CreateSolidBrush(RGB(20,20,20));
 	bMenuBackground = CreateSolidBrush(RGB(40,40,40));
+	bMenuBackgroundHovered = CreateSolidBrush(RGB(70,70,70));
 
 	LOGFONTW lf;
 	HKEY key;
@@ -657,6 +764,7 @@ void WinMainCRTStartup(){
 	RegCloseKey(key);
 	font = CreateFontIndirectW(&lf);
 
+	wc.hCursor = LoadCursorW(0,IDC_ARROW);
 	wc.hIcon = LoadIconW(instance,MAKEINTRESOURCEA(RID_ICON));
 	wc.hbrBackground = bBackground;
 	RegisterClassW(&wc);
