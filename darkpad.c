@@ -721,7 +721,7 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 	}
 	return OpenNcThemeData(wnd,classList);
 }
-void mainCRTStartup(){
+void WinMainCRTStartup(){
 	instance = GetModuleHandleW(0);
 	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
