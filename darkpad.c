@@ -3,13 +3,9 @@ Bugs:
 We need window scaling and font scaling for dpi changes.
 Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
 Need to subclass ComboBox and GroupBox to make them darkmode.
-Ctrl+Z for Replace All. Maybe you can select all and replacesel with the new text instead of settext.
-Replace/Replace All don't affect starred.
 Colors is not implemented.
 matchwholeword needs to be removed from the installer and uninstaller.
 That annoying line underneath the menu bar still appears during certain actions.
-Menu bar line should be the window outline color
-Honestly I want a bottom bar with just line,column and line ending. And have no zoom.
 */
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
