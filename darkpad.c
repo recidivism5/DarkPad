@@ -596,8 +596,8 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					break;
 				}
 				case AID_SAVE:{
-					if (*gpath && starred){
-						saveFile(gpath);
+					if (*gpath){
+						if (starred) saveFile(gpath);
 						break;
 					}
 				}
