@@ -114,6 +114,7 @@ void loadFile(u16 *path){
 	u32 total = 4, used = 0;
 	u8 *str = HeapAlloc(heap,0,total);
 	u8 *f = file;
+	lineending = 0;
 	while (f < file+size){
 		if (used+2 > total){
 			while (used+2 > total) total *= 2;
