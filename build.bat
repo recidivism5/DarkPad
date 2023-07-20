@@ -20,4 +20,5 @@ mt.exe -manifest installer.exe.manifest -outputresource:installer.exe;1
 del installer.obj
 del installerres.res
 del uninstaller.exe
+del darkpad.exe
 del icon.ico
