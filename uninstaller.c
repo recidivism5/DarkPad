@@ -45,12 +45,10 @@ HANDLE consoleOut;
 #else
 #define print(str)
 #endif
-HANDLE heap;
 HINSTANCE instance;
 u16 path[MAX_PATH];
 void WinMainCRTStartup(){
 	instance = GetModuleHandleW(0);
-	heap = GetProcessHeap();
 	CoInitialize(0);
 #if CONSOLE
 	AllocConsole();

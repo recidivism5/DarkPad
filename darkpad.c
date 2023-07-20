@@ -34,12 +34,6 @@ typedef signed long long i64;
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define COUNT(arr) (sizeof(arr)/sizeof(*arr))
-HANDLE heap;
-#define calloc(count,size) HeapAlloc(heap,HEAP_ZERO_MEMORY,(count)*(size))
-#define free(ptr) HeapFree(heap,0,(ptr))
-#define abs(x) ((x)<0 ? -(x) : (x))
-#define malloc(size) HeapAlloc(heap,0,(size))
-#define realloc(ptr,size) HeapReAlloc(heap,0,(ptr),(size))
 
 i32 dpi;
 i32 dpiScale(i32 val){
@@ -108,17 +102,17 @@ void loadFile(u16 *path){
 		return;
 	}
 	u32 size = GetFileSize(hfile,0);
-	u8 *file = HeapAlloc(heap,0,size);
+	u8 *file = malloc(size);
 	ReadFile(hfile,file,size,0,0);
 	CloseHandle(hfile);
 	u32 total = 4, used = 0;
-	u8 *str = HeapAlloc(heap,0,total);
+	u8 *str = malloc(total);
 	u8 *f = file;
 	lineending = 0;
 	while (f < file+size){
 		if (used+2 > total){
 			while (used+2 > total) total *= 2;
-			str = HeapReAlloc(heap,0,str,total);
+			str = realloc(str,total);
 		}
 		if (*f=='\r' || *f=='\n'){
 			if (!lineending && *f=='\r') lineending = 1;
@@ -129,45 +123,45 @@ void loadFile(u16 *path){
 	}
 	if (used==total){
 		total++;
-		str = HeapReAlloc(heap,0,str,total);
+		str = realloc(str,total);
 	}
 	InvalidateRect(glineending,0,0);
 	str[used++] = 0;
 	i32 wlen = MultiByteToWideChar(CP_UTF8,MB_PRECOMPOSED,str,used,0,0);
-	u16 *w = HeapAlloc(heap,0,wlen*sizeof(u16));
+	u16 *w = malloc(wlen*sizeof(u16));
 	MultiByteToWideChar(CP_UTF8,MB_PRECOMPOSED,str,used,w,wlen);
 	SendMessageW(gedit,WM_SETTEXT,0,w);
-	HeapFree(heap,0,file);
-	HeapFree(heap,0,str);
-	HeapFree(heap,0,w);
+	free(file);
+	free(str);
+	free(w);
 	wcscpy(gpath,path);
 	starred = 0;
 	updateTitle();
 }
 void saveFile(u16 *path){
 	i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0)+1;
-	u16 *buf = HeapAlloc(heap,0,len*sizeof(u16));
+	u16 *buf = malloc(len*sizeof(u16));
 	len = SendMessageW(gedit,WM_GETTEXT,len,buf);
 	if (!lineending){
-		u16 *nbuf = HeapAlloc(heap,0,(len+1)*sizeof(u16));
+		u16 *nbuf = malloc((len+1)*sizeof(u16));
 		u16 *n = nbuf, *b = buf;
 		while (*b){
 			if (*b != '\r') *n++ = *b;
 			b++;
 		}
 		*n = 0;
-		HeapFree(heap,0,buf);
+		free(buf);
 		buf = nbuf;
 		len = n-nbuf;
 	}
 	i32 mlen = WideCharToMultiByte(CP_UTF8,0,buf,len,0,0,0,0);
-	u8 *m = HeapAlloc(heap,0,mlen);
+	u8 *m = malloc(mlen);
 	WideCharToMultiByte(CP_UTF8,0,buf,len,m,mlen,0,0);
 	HANDLE hfile = CreateFileW(path,GENERIC_WRITE,0,0,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
 	WriteFile(hfile,m,mlen,0,0);
 	CloseHandle(hfile);
-	HeapFree(heap,0,buf);
-	HeapFree(heap,0,m);
+	free(buf);
+	free(m);
 	wcscpy(gpath,path);
 	starred = 0;
 	updateTitle();
@@ -219,16 +213,16 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					HWND hwhat = GetDlgItem(wnd,RID_FIND_WHAT);
 					i64 whatlen = SendMessageW(hwhat,WM_GETTEXTLENGTH,0,0) + 1;
 					if (whatlen == 1) break;
-					u16 *what = HeapAlloc(heap,0,whatlen*sizeof(u16));
+					u16 *what = malloc(whatlen*sizeof(u16));
 					whatlen = SendMessageW(hwhat,WM_GETTEXT,whatlen,what);
 
 					HWND hwith = GetDlgItem(wnd,RID_FIND_WITH);
 					i64 withlen = SendMessageW(hwith,WM_GETTEXTLENGTH,0,0) + 1;
-					u16 *with = HeapAlloc(heap,0,withlen*sizeof(u16));
+					u16 *with = malloc(withlen*sizeof(u16));
 					withlen = SendMessageW(hwith,WM_GETTEXT,withlen,with);
 
 					i64 total = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0) + 1;
-					u16 *text = HeapAlloc(heap,0,total*sizeof(u16));
+					u16 *text = malloc(total*sizeof(u16));
 					i64 textlen = SendMessageW(gedit,WM_GETTEXT,total,text);
 
 					i32 (*cmp)(u16 *s1, u16 *s2, size_t maxCount) = SendMessageW(GetDlgItem(wnd,RID_FIND_CASE),BM_GETCHECK,0,0)==BST_CHECKED ? wcsncmp : _wcsnicmp;
@@ -299,7 +293,7 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 									if (textlen+withlen-whatlen > total-1){
 										while (textlen+withlen-whatlen > total-1) total += 4096;
 										i64 d = s-text;
-										text = HeapReAlloc(heap,0,text,total*sizeof(u16));
+										text = realloc(text,total*sizeof(u16));
 										s = text+d;
 									}
 									memmove(s+withlen,s+whatlen,(text+textlen-(s+whatlen))*sizeof(u16));
@@ -325,9 +319,9 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 						}
 					}
 
-					HeapFree(heap,0,what);
-					HeapFree(heap,0,with);
-					HeapFree(heap,0,text);
+					free(what);
+					free(with);
+					free(text);
 					break;
 				}
 				case IDCANCEL: 
@@ -724,7 +718,6 @@ HTHEME customOpenThemeData(HWND wnd, LPCWSTR classList){
 }
 void WinMainCRTStartup(){
 	instance = GetModuleHandleW(0);
-	heap = GetProcessHeap();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
 	HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll",0,LOAD_LIBRARY_SEARCH_SYSTEM32);
