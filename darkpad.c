@@ -6,6 +6,13 @@ Need to subclass ComboBox and GroupBox to make them darkmode.
 Colors is not implemented.
 matchwholeword needs to be removed from the installer and uninstaller.
 That annoying line underneath the menu bar still appears during certain actions.
+
+[x] line ending registry presence
+[x] font dialog should bring up registry font
+[ ] fix groupbox text in font dialog
+[x] drag and drop
+[ ] file explorer context menu entry
+[x] replace all algorithm is stupid inplace. replace it with 2 buffer solution.
 */
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
@@ -285,37 +292,36 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 							break;
 						}
 						case RID_REPLACE_ALL:{
-							u16 *s = text,
-							*pe = text+textlen-whatlen;
+							i64 ntotal = textlen, nused = 0;
+							u16 *ntext = malloc((ntotal+1)*sizeof(u16));
+							u16 *s = text, *pe = text+textlen-whatlen;
 							i32 replace = 0;
-							do {
-								START:
+							while (s <= pe){
 								if (!cmp(s,what,1) && !cmp(s+whatlen-1,what+whatlen-1,1) && !cmp(s+1,what+1,MAX(0,whatlen-2))){
-									if (textlen+withlen-whatlen > total-1){
-										while (textlen+withlen-whatlen > total-1) total += 4096;
-										i64 d = s-text;
-										text = realloc(text,total*sizeof(u16));
-										s = text+d;
+									if (ntotal-nused < withlen){
+										while (ntotal-nused < withlen) ntotal += 2048;
+										ntext = realloc(ntext,(ntotal+1)*sizeof(u16));
 									}
-									memmove(s+withlen,s+whatlen,(text+textlen-(s+whatlen))*sizeof(u16));
-									memcpy(s,with,withlen*sizeof(u16));
-									textlen += withlen-whatlen;
-									pe = text+textlen-whatlen;
-									s += withlen;
+									memcpy(ntext+nused,with,withlen*sizeof(u16));
+									nused += withlen;
+									s += whatlen;
 									replace = 1;
-									if (s > pe) break;
-									goto START;
+								} else {
+									if (nused==ntotal){
+										ntotal += 2048;
+										ntext = realloc(ntext,(ntotal+1)*sizeof(u16));
+									}
+									ntext[nused++] = *s++;
 								}
-								s++;
-								if (s > pe) s = text;
-							} while (s != text);
+							}
 							if (replace){
-								text[textlen] = 0;
+								ntext[nused] = 0;
 								SendMessageW(gedit,EM_SETSEL,0,-1);
-								SendMessageW(gedit,EM_REPLACESEL,1,text);
+								SendMessageW(gedit,EM_REPLACESEL,1,ntext);
 								SendMessageW(gedit,EM_SETSEL,0,0);
 								SendMessageW(gedit,EM_SCROLLCARET,0,0);
 							}
+							free(ntext);
 							break;
 						}
 					}
@@ -361,6 +367,11 @@ LRESULT CALLBACK OwnerDrawButtonProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
     switch (uMsg){
 		case WM_LBUTTONDOWN:{ //as for why the fuck this only occasionally gets triggered, I don't know.
 			lineending = !lineending;
+			HKEY key;
+			RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+			RegSetValueExW(key,L"lineending",0,REG_DWORD,&lineending,sizeof(lineending));
+			RegCloseKey(key);
+
 			starred = 1;
 			updateTitle();
 			InvalidateRect(hWnd,0,0);
@@ -470,8 +481,18 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			SelectObject(dip->hDC,oldBrush); 
 			return 1;
 		}
+		case WM_DROPFILES:{
+			u16 p[MAX_PATH];
+			if (DragQueryFileW(wparam,0xFFFFFFFF,0,0) > 1) goto EXIT_DROPFILES;
+			DragQueryFileW(wparam,0,p,COUNT(p));
+			loadFile(p);
+			EXIT_DROPFILES:
+			DragFinish(wparam);
+			return 0;
+		}
 		case WM_CREATE:{
 			gwnd = wnd;
+			DragAcceptFiles(gwnd,1);
 			dpi = GetDpiForWindow(wnd);
 			initialDpi = dpi;
 			updateTitle();
@@ -563,6 +584,13 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					SendMessageW(gedit,WM_SETTEXT,0,&zero);
 					gpath[0] = 0;
 					starred = 0;
+
+					HKEY key;
+					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+					DWORD vsize = sizeof(lineending);
+					RegQueryValueExW(key,L"lineending",0,0,&lineending,&vsize);
+					RegCloseKey(key);
+
 					updateTitle();
 					break;
 				}
@@ -636,12 +664,16 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					break;
 				case AID_FONT:{
 					LOGFONTW lf;
-					CHOOSEFONTW cf = {sizeof(CHOOSEFONTW),wnd,0,&lf,0,CF_ENABLEHOOK,0,0,FontProc,0,0,0,0,0,0,0};
+					HKEY key;
+					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
+					DWORD vsize = sizeof(lf);
+					RegQueryValueExW(key,L"font",0,0,&lf,&vsize);
+					RegCloseKey(key);
+					CHOOSEFONTW cf = {sizeof(CHOOSEFONTW),wnd,0,&lf,0,CF_ENABLEHOOK|CF_INITTOLOGFONTSTRUCT,0,0,FontProc,0,0,0,0,0,0,0};
 					if (!ChooseFontW(&cf)) break;
 					DeleteObject(font);
 					font = CreateFontIndirectW(&lf);
 					SendMessageW(gedit,WM_SETFONT,font,0);
-					HKEY key;
 					RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
 					RegSetValueExW(key,L"font",0,REG_BINARY,&lf,sizeof(lf));
 					RegCloseKey(key);
@@ -752,6 +784,8 @@ void WinMainCRTStartup(){
 	RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
 	DWORD vsize = sizeof(lf);
 	RegQueryValueExW(key,L"font",0,0,&lf,&vsize);
+	vsize = sizeof(lineending);
+	RegQueryValueExW(key,L"lineending",0,0,&lineending,&vsize);
 	RegCloseKey(key);
 	font = CreateFontIndirectW(&lf);
 

@@ -91,9 +91,9 @@ void WinMainCRTStartup(){
 	RegCreateKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
 	u32 d = 1;
 	RegSetValueExW(key,L"wordwrap",0,REG_DWORD,&d,sizeof(d));
+	RegSetValueExW(key,L"lineending",0,REG_DWORD,&d,sizeof(d));
 	d = 0;
 	RegSetValueExW(key,L"matchcase",0,REG_DWORD,&d,sizeof(d));
-	RegSetValueExW(key,L"matchwholeword",0,REG_DWORD,&d,sizeof(d));
 	res = FindResourceW(instance,MAKEINTRESOURCEW(RID_FONT),RT_RCDATA);
 	data = LockResource(LoadResource(0,res));
 	size = SizeofResource(0,res);
