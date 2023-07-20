@@ -10,6 +10,7 @@ That annoying line underneath the menu bar still appears during certain actions.
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
 int _fltused;
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
@@ -23,14 +24,14 @@ int _fltused;
 #include <shlguid.h>
 #include <commdlg.h>
 #include "res.h"
-typedef unsigned char u8;
-typedef unsigned short u16;
-typedef unsigned int u32;
-typedef unsigned long long u64;
-typedef signed char i8;
-typedef signed short i16;
-typedef signed int i32;
-typedef signed long long i64;
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define COUNT(arr) (sizeof(arr)/sizeof(*arr))
