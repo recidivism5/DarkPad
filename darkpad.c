@@ -9,10 +9,15 @@ That annoying line underneath the menu bar still appears during certain actions.
 
 [x] line ending registry presence
 [x] font dialog should bring up registry font
-[ ] fix groupbox text in font dialog
 [x] drag and drop
-[ ] file explorer context menu entry
 [x] replace all algorithm is stupid inplace. replace it with 2 buffer solution.
+[x] line ending button now responds to all clicks (added WM_LBUTTONDBLCLK)
+[x] support for CR files.
+[x] scroll to caret on find and replace
+[ ] file explorer context menu entry
+[ ] fix groupbox text in font dialog
+[ ] implement colors dialog
+[ ] 48x48 and 256x256 icons
 */
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN
@@ -81,7 +86,10 @@ ACCEL accels[]={
 	FCONTROL|FVIRTKEY,VK_BACK,AID_DELETE_WORD_LEFT,
 };
 i32 starred;
-i32 lineending = 0;//0 = lf, 1 = crlf
+enum {
+	CR,CRLF,LF
+};
+i32 lineending = CR;
 u16 *name(u16 *s){
 	u16 *lastslash = s;
 	while (*s){
@@ -116,24 +124,34 @@ void loadFile(u16 *path){
 	u32 total = 4, used = 0;
 	u8 *str = malloc(total);
 	u8 *f = file;
-	lineending = 0;
+	lineending = CR;
 	while (f < file+size){
 		if (used+2 > total){
 			while (used+2 > total) total *= 2;
 			str = realloc(str,total);
 		}
 		if (*f=='\r' || *f=='\n'){
-			if (!lineending && *f=='\r') lineending = 1;
 			str[used++] = '\r';
 			str[used++] = '\n';
-		} else str[used++] = *f;
-		f += 1 + (*f=='\r');
+			if (f[0]=='\r'){
+				if (f+1 < file+size && f[1]=='\n'){
+					lineending = CRLF;
+					f += 2;
+				} else {
+					lineending = CR;
+					f++;
+				}
+			} else {
+				lineending = LF;
+				f++;
+			}
+		} else str[used++] = *f++;
 	}
+	InvalidateRect(glineending,0,0);
 	if (used==total){
 		total++;
 		str = realloc(str,total);
 	}
-	InvalidateRect(glineending,0,0);
 	str[used++] = 0;
 	i32 wlen = MultiByteToWideChar(CP_UTF8,MB_PRECOMPOSED,str,used,0,0);
 	u16 *w = malloc(wlen*sizeof(u16));
@@ -245,6 +263,7 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 							do {
 								if (!cmp(s,what+whatlen-1,1) && !cmp(s-whatlen+1,what,1) && !cmp(s-whatlen+2,what+1,MAX(0,whatlen-2))){
 									SendMessageW(gedit,EM_SETSEL,s-whatlen+1-text,s+1-text);
+									SendMessageW(gedit,EM_SCROLLCARET,0,0);
 									break;
 								}
 								s--;
@@ -261,6 +280,7 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 							do {
 								if ((s!=start || endi-starti!=whatlen) && !cmp(s,what,1) && !cmp(s+whatlen-1,what+whatlen-1,1) && !cmp(s+1,what+1,MAX(0,whatlen-2))){
 									SendMessageW(gedit,EM_SETSEL,s-text,s-text+whatlen);
+									SendMessageW(gedit,EM_SCROLLCARET,0,0);
 									break;
 								}
 								s++;
@@ -279,10 +299,12 @@ i64 FindProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 								if (!cmp(s,what,1) && !cmp(s+whatlen-1,what+whatlen-1,1) && !cmp(s+1,what+1,MAX(0,whatlen-2))){
 									if (s==start){
 										SendMessageW(gedit,EM_REPLACESEL,1,with);
+										SendMessageW(gedit,EM_SCROLLCARET,0,0);
 										s += withlen;
 										dif = withlen-whatlen;
 									} else {
 										SendMessageW(gedit,EM_SETSEL,s-text+dif,s-text+dif+whatlen);
+										SendMessageW(gedit,EM_SCROLLCARET,0,0);
 										break;
 									}
 								}
@@ -365,8 +387,9 @@ void SendKeydownMessage(HWND wnd, UINT key){
 i32 lehovered = 0;
 LRESULT CALLBACK OwnerDrawButtonProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData){
     switch (uMsg){
-		case WM_LBUTTONDOWN:{ //as for why the fuck this only occasionally gets triggered, I don't know.
-			lineending = !lineending;
+		case WM_LBUTTONDBLCLK: case WM_LBUTTONDOWN:{
+			lineending++;
+			if (lineending > LF) lineending = CR;
 			HKEY key;
 			RegOpenKeyW(HKEY_CURRENT_USER,L"software\\darkpad",&key);
 			RegSetValueExW(key,L"lineending",0,REG_DWORD,&lineending,sizeof(lineending));
@@ -413,7 +436,13 @@ LRESULT CALLBACK OwnerDrawButtonProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
 			SetTextColor(hdc,RGB(255,255,255));
 			RECT tr = r;
 			tr.top += dpiScale(1);
-			DrawTextW(hdc,lineending ? L"CRLF" : L"LF",-1,&tr,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
+			u16 *lestr;
+			switch (lineending){
+				case CR: lestr = L"CR"; break;
+				case CRLF: lestr = L"CRLF"; break;
+				case LF: lestr = L"LF"; break;
+			}
+			DrawTextW(hdc,lestr,-1,&tr,DT_SINGLELINE|DT_CENTER|DT_VCENTER);
 			EndPaint(hWnd, &ps);
 			break;
 		}
