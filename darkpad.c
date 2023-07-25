@@ -168,11 +168,12 @@ void saveFile(u16 *path){
 	i64 len = SendMessageW(gedit,WM_GETTEXTLENGTH,0,0)+1;
 	u16 *buf = malloc(len*sizeof(u16));
 	len = SendMessageW(gedit,WM_GETTEXT,len,buf);
-	if (!lineending){
+	if (lineending==CR || lineending==LF){
+		u16 e = CR ? '\r' : '\n';
 		u16 *nbuf = malloc((len+1)*sizeof(u16));
 		u16 *n = nbuf, *b = buf;
 		while (*b){
-			if (*b != '\r') *n++ = *b;
+			if (*b != e) *n++ = *b;
 			b++;
 		}
 		*n = 0;
