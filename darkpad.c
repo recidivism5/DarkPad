@@ -3,21 +3,11 @@ Bugs:
 We need window scaling and font scaling for dpi changes.
 Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
 Need to subclass ComboBox and GroupBox to make them darkmode.
-Colors is not implemented.
-matchwholeword needs to be removed from the installer and uninstaller.
 That annoying line underneath the menu bar still appears during certain actions.
 
-[x] line ending registry presence
-[x] font dialog should bring up registry font
-[x] drag and drop
-[x] replace all algorithm is stupid inplace. replace it with 2 buffer solution.
-[x] line ending button now responds to all clicks (added WM_LBUTTONDBLCLK)
-[x] support for CR files.
-[x] scroll to caret on find and replace
 [ ] file explorer context menu entry
 [ ] fix groupbox text in font dialog
-[ ] implement colors dialog
-[x] 48x48 and 256x256 icons
+[ ] colors dialog
 */
 
 #include "base.h"
