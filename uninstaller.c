@@ -8,52 +8,19 @@
 - link uninstall.exe in HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall (https://learn.microsoft.com/en-us/windows/win32/msi/configuring-add-remove-programs-with-windows-installer)
 - put shortcut in %appdata%\Microsoft\Windows\Start Menu\Programs (https://gist.github.com/abel0b/0b740648d6370e3e77fd70a816a34523) or maybe (https://learn.microsoft.com/en-us/windows/win32/shell/how-to-add-shortcuts-to-the-start-menu)
 */
-#define _NO_CRT_STDIO_INLINE
-#define WIN32_LEAN_AND_MEAN
-int _fltused;
-#include <stdio.h>
-#include <string.h>
-#include <windows.h>
-#include <dwmapi.h>
-#include <uxtheme.h>
-#include <vssym32.h>
-#include <shellapi.h>
-#include <shlobj_core.h>
-#include <shobjidl_core.h>
-#include <shlguid.h>
-#include <commdlg.h>
-typedef unsigned char u8;
-typedef unsigned short u16;
-typedef unsigned int u32;
-typedef unsigned long long u64;
-typedef signed char i8;
-typedef signed short i16;
-typedef signed int i32;
-typedef signed long long i64;
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
-#define COUNT(arr) (sizeof(arr)/sizeof(*arr))
-#define FOR(var,count) for(i32 var = 0; var < (count); var++)
+
+#include "base.h"
+#include "extensions.h"
+
 u16 *EndOf(u16 *s){
 	while (*s) s++;
 	return s;
 }
-#define CONSOLE 1
-#if CONSOLE
-HANDLE consoleOut;
-#define print(str) WriteConsoleW(consoleOut,str,StringLength(str),0,0); WriteConsoleW(consoleOut,L"\r\n",2,0,0);
-#else
-#define print(str)
-#endif
 HINSTANCE instance;
 u16 path[MAX_PATH];
 void WinMainCRTStartup(){
 	instance = GetModuleHandleW(0);
 	CoInitialize(0);
-#if CONSOLE
-	AllocConsole();
-	consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
-#endif
 
 	u16 *prgs;
     SHGetKnownFolderPath(&FOLDERID_Programs,0,0,&prgs);
@@ -63,6 +30,48 @@ void WinMainCRTStartup(){
 	RegDeleteKeyW(HKEY_CURRENT_USER,L"software\\darkpad");
 	RegDeleteKeyW(HKEY_CURRENT_USER,L"software\\microsoft\\windows\\currentversion\\uninstall\\darkpad");
 
+	HKEY key;
+	for (i32 i = 0; i < COUNT(extensions); i++){
+		_snwprintf(path,COUNT(path),L"software\\microsoft\\windows\\currentversion\\explorer\\fileexts\\.%s\\openwithlist",extensions[i]);
+		if (ERROR_SUCCESS == RegOpenKeyW(HKEY_CURRENT_USER,path,&key)){
+			u16 c[2] = L"a";
+			DWORD type;
+			DWORD size;
+			while (1){
+				size = sizeof(path);
+				if (ERROR_SUCCESS != RegQueryValueExW(key,c,0,&type,path,&size)) break;
+				if (type==REG_SZ && size){
+					if ((size==12*2 || size==11*2) && !_wcsnicmp(path,L"darkpad.exe",size/2)){
+						RegDeleteValueW(key,c);
+						size = sizeof(path);
+						i32 count;
+						if (ERROR_SUCCESS == RegQueryValueExW(key,L"mrulist",0,&type,path,&size)){
+							count = size/2;
+							for (i32 j = 0; j < count; j++){
+								if (path[j]==c[0]){
+									memmove(path+j,path+j+1,(count-1-j)*sizeof(u16));
+									count--;
+									if (path[count-1]){
+										path[count] = 0;
+										count++;
+									}
+									RegSetValueExW(key,L"mrulist",0,REG_SZ,path,count*2);
+								}
+							}
+						}
+					}
+				} else {
+					_snwprintf(path,COUNT(path),L".%s Explorer FileExts registry key is corrupted.",extensions[i]);
+					MessageBoxW(0,path,L"Error",0);
+					break;
+				}
+				c[0]++;
+				if (c[0]>'z') break;
+			}
+			RegCloseKey(key);
+		}
+	}
+	
 	wcscpy(path,L"/c cd .. & rmdir /s /q ");
 	SHGetSpecialFolderPathW(0,EndOf(path),CSIDL_LOCAL_APPDATA,0);
 	wcscat(path,L"\\darkpad >> NUL");

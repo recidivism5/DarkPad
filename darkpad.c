@@ -19,34 +19,9 @@ That annoying line underneath the menu bar still appears during certain actions.
 [ ] implement colors dialog
 [x] 48x48 and 256x256 icons
 */
-#define _NO_CRT_STDIO_INLINE
-#define WIN32_LEAN_AND_MEAN
-int _fltused;
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <windows.h>
-#include <windowsx.h>
-#include <dwmapi.h>
-#include <uxtheme.h>
-#include <vssym32.h>
-#include <shellapi.h>
-#include <shlobj_core.h>
-#include <shobjidl_core.h>
-#include <shlguid.h>
-#include <commdlg.h>
+
+#include "base.h"
 #include "res.h"
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
-#define COUNT(arr) (sizeof(arr)/sizeof(*arr))
 
 i32 dpi;
 i32 dpiScale(i32 val){
@@ -124,7 +99,7 @@ void loadFile(u16 *path){
 	u32 total = 4, used = 0;
 	u8 *str = malloc(total);
 	u8 *f = file;
-	lineending = CR;
+	lineending = CRLF;
 	while (f < file+size){
 		if (used+2 > total){
 			while (used+2 > total) total *= 2;
