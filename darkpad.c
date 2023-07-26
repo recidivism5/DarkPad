@@ -17,7 +17,7 @@ That annoying line underneath the menu bar still appears during certain actions.
 [ ] file explorer context menu entry
 [ ] fix groupbox text in font dialog
 [ ] implement colors dialog
-[ ] 48x48 and 256x256 icons
+[x] 48x48 and 256x256 icons
 */
 #define _NO_CRT_STDIO_INLINE
 #define WIN32_LEAN_AND_MEAN

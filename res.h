@@ -8,3 +8,6 @@
 #define RID_FIND_DOWN 76
 #define RID_REPLACE 77
 #define RID_REPLACE_ALL 78
+
+#define VERSION_VALUE TEXT("1.0\0")
+#define VERSION_DIGITALVALUE 1, 0, 0, 0
