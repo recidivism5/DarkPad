@@ -5,7 +5,6 @@ Checkbox check is too small on monitor scales > 100%. I need to subclass the che
 Need to subclass ComboBox and GroupBox to make them darkmode.
 That annoying line underneath the menu bar still appears during certain actions.
 
-[ ] file explorer context menu entry
 [ ] fix groupbox text in font dialog
 [ ] colors dialog
 */
