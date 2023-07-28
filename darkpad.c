@@ -696,11 +696,16 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 					HLOCAL eh = SendMessageW(gedit,EM_GETHANDLE,0,0);
 					SendMessageW(newedit,WM_SETTEXT,0,LocalLock(eh));
 					LocalUnlock(eh);
+					u32 starti,endi;
+					SendMessageW(gedit,EM_GETSEL,&starti,&endi);
+					SendMessageW(newedit,EM_SETSEL,starti,endi);
 					DestroyWindow(gedit);
 					gedit = newedit;
 					RECT r;
 					GetClientRect(wnd,&r);
 					MoveWindow(gedit,0,0,r.right,r.bottom-dpiScale(BOTTOMBAR_HEIGHT),1);
+					SetFocus(gedit);
+					SendMessageW(gedit,EM_SCROLLCARET,0,0);
 					RegSetValueExW(key,L"wordwrap",0,REG_DWORD,&v,sizeof(v));
 					RegCloseKey(key);
 					SetMenuItemInfoW(Format,AID_WORD_WRAP,0,&mii);
