@@ -565,7 +565,7 @@ i64 WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam){
 			PostQuitMessage(0);
 			return 0;
 		case WM_CTLCOLOREDIT:
-			SetTextColor(wparam,0xcccccc);
+			SetTextColor(wparam,0xebebeb);
 			SetBkColor(wparam,RGB(20,20,20));
 			return bBackground;
 		case WM_COMMAND:
