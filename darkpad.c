@@ -1,12 +1,20 @@
 /*
-Bugs:
-We need window scaling and font scaling for dpi changes.
-Checkbox check is too small on monitor scales > 100%. I need to subclass the checkbox and draw it properly like npp.
-Need to subclass ComboBox and GroupBox to make them darkmode.
-That annoying line underneath the menu bar still appears during certain actions.
-
-[ ] fix groupbox text in font dialog
+Todo:
+[ ] fix groupbox text in font dialog. subclass ComboBox and GroupBox to make them darkmode.
+[ ] fix checkbox appearance. Maybe we don't have to override its style. Otherwise we need to subclass the checkbox and draw it properly like npp.
 [ ] colors dialog
+[ ] installer and uninstaller GUIs
+[ ] proper error checking and return codes in installer and uninstaller
+[ ] installer and uninstaller must check if there are open instances of darkpad.exe before doing anything
+[ ] uninstaller should only delete darkpad files from AppData/Local/darkpad. If the folder is not empty after that, don't delete it.
+[ ] darkpad should have error messageboxes for trying to save a file in use by another program.
+[ ] error message box for trying to open a folder / multiple files with drag and drop.
+[ ] installer and uninstaller need to check if there's another instance of installer or uninstaller running and not run.
+[ ] darkpad, installer and uninstaller need to handle all errors when interacting with the registry, in case something goes wrong there.
+[ ] ensure darkpad works for binary files
+[ ] window scaling and body text scaling for dpi changes.
+[ ] fix annoying line underneath the menu bar still appears during certain actions.
+[ ] replace bottombar with childwindow and add WS_CLIPCHILDREN to top level window and bottombar window.
 */
 
 #include "base.h"
